@@ -36,18 +36,19 @@ const NAV = [
   {v:'emp',label:'社員',full:'社員ページ',icon:ICON.user},
   {v:'att',label:'出勤',full:'出勤カレンダー',icon:ICON.cal}
 ];
-const TITLES = {dash:'全体ページ',emp:'社員ページ',att:'出勤カレンダー',admin:'システム管理'};
+const TITLES = {dash:'全体ページ',emp:'社員ページ',att:'出勤カレンダー',report:'月次レポート',admin:'システム管理'};
 function shell(){
   const u=me();
   let body='';
   if(ui.view==='emp') body=renderEmp();
   else if(ui.view==='att') body=renderAtt();
   else if(ui.view==='admin') body=renderAdmin();
+  else if(ui.view==='report') body=renderReport();
   else body=renderDash();
   return `<div class="app">
   <aside class="sidebar"><div class="brand"><button class="side-toggle" data-act="nav-mini" aria-label="${prefs.navMini?'メニューを開く':'メニューをたたむ'}" aria-expanded="${!prefs.navMini}">${ICON.menu}</button><span class="brand-mark">本</span><span class="brand-t">本部アプリ</span></div>
     ${NAV.map(n=>`<button class="nav-btn ${ui.view===n.v?'on':''}" data-act="nav" data-v="${n.v}" title="${n.full}">${n.icon}<span class="nl-f">${n.full}</span><span class="nl-s">${n.label}</span></button>`).join('')}
-    <button class="nav-btn" disabled>${ICON.chart}<span>月次レポート</span><span class="soon">次の段階</span></button>
+    <button class="nav-btn ${ui.view==='report'?'on':''}" data-act="nav" data-v="report" title="月次レポート">${ICON.chart}<span class="nl-f">月次レポート</span><span class="nl-s">月報</span></button>
     <button class="nav-btn ${ui.view==='admin'?'on':''}" data-act="nav" data-v="admin" title="システム管理">${ICON.sliders}<span class="nl-f">システム管理</span><span class="nl-s">管理</span></button>
     <div class="side-foot"><div class="side-user"><span class="avatar">${esc(u.name.slice(0,1))}</span><span>${esc(u.name)}</span>${u.admin?'<span class="chip acc">管理者</span>':''}</div>
       <button class="nav-btn" data-act="settings">${ICON.gear}<span>設定</span></button></div>

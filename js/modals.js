@@ -78,6 +78,7 @@ function settingsHtml(){
         ? `<div class="acct"><span class="avatar">${esc(u.name.slice(0,1))}</span><div style="min-width:0"><div style="font-weight:700">${esc(u.name)} ${u.admin?'<span class="chip acc">管理者</span>':''}</div><div class="muted small">ID：${esc(u.loginId)}・30日間ログインしたままになります</div></div></div><button class="btn btn-block" data-act="logout">${ICON.out}ログアウト</button>`
         : `<p>ログインしていません。</p><button class="btn btn-primary btn-block" data-act="goto-login">ログイン画面へ</button>`}</div>
       ${u?`<div class="set-sec"><h4>パスワード</h4><button class="btn btn-block" data-act="pw-open">パスワードを変える</button></div>
+      <div class="set-sec show-sm"><h4>月次レポート</h4><button class="btn btn-block" data-act="open-report">${ICON.chart}月次レポートを開く</button></div>
       <div class="set-sec show-sm"><h4>システム管理</h4><p>業務マスター${u.admin?'、社員、人件費の設定':''}はここから開きます。</p><button class="btn btn-block" data-act="open-admin">${ICON.sliders}システム管理を開く</button></div>`:''}
       <p class="muted small" style="margin:6px 0 0;text-align:center">本部アプリ v${APP_VERSION}</p>
     </div></div></div>`;

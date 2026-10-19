@@ -15,6 +15,9 @@ const ACT={
   'emp-reset'(el){ resetPw(el.dataset.id); },
   'emp-retire'(el){ retireEmp(el.dataset.id); },
   'cost-save'(){ saveCost(); },
+  'open-report'(el){ if(!guard()) return; ui.modal=null; if(el.dataset.ym) ui.repMonth=el.dataset.ym; ui.view='report'; render(); window.scrollTo(0,0); loadReport(ui.repMonth); },
+  'rep-month'(el){ ui.repMonth=addMonths(ui.repMonth,+el.dataset.n); render(); loadReport(ui.repMonth); },
+  'rep-close'(){ closeMonth(); },
   settings(){ ui.modal={type:'settings'}; renderModal(); },
   'set-theme'(el){
     const v=el.dataset.v, now=Date.now();
@@ -24,7 +27,7 @@ const ACT={
   'set-fs'(el){ prefs.fs=el.dataset.v; savePrefs(); applyPrefs(); renderModal(); },
   'goto-login'(){ closeModal(); const i=document.getElementById('lg-id'); if(i) i.focus(); },
   nav(el){ if(el.dataset.v===ui.view) return; if(!guard()) return; ui.view=el.dataset.v; if(ui.view==='emp'&&!ui.empId) ui.empId=ui.user; render(); window.scrollTo(0,0);
-    if(ui.view==='dash') ensureMonths([ui.dashMonth]); else if(ui.view==='att') ensureMonths([ui.attMonth]); else if(ui.view==='emp') ensureCal(); },
+    if(ui.view==='dash') ensureMonths([ui.dashMonth]); else if(ui.view==='att') ensureMonths([ui.attMonth]); else if(ui.view==='emp') ensureCal(); else if(ui.view==='report') loadReport(ui.repMonth); },
   'dash-month'(el){ ui.dashMonth=addMonths(ui.dashMonth,+el.dataset.n); render(); ensureMonths([ui.dashMonth]); },
   'dash-date'(el){ ui.dashDate=el.dataset.d; ui.dashMonth=ymOf(el.dataset.d); render(); },
   'dash-today'(){ ui.dashDate=bizToday(); ui.dashMonth=ymOf(ui.dashDate); render(); ensureMonths([ui.dashMonth]); },

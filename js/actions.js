@@ -212,3 +212,23 @@ async function saveCost(){
   try { const r = await api('saveSettings', { monthlyCost: v }); applySettings(r.settings); render(); toast('月の人件費を ' + yen(v) + ' にしました'); }
   catch (err) { handleError(err); }
 }
+
+/* ===== 月次レポート ===== */
+async function loadReport(ym){
+  try { const r = await api('monthReport', { ym }); ui.rep[ym] = r; if (ui.view === 'report' && ui.repMonth === ym) render(); }
+  catch (err) { handleError(err); }
+}
+async function closeMonth(){
+  const ym = ui.repMonth, r = ui.rep[ym]; if (!r) return;
+  const msg = r.closed ? fmtYM(ym) + 'の数字を、今のデータで確定し直しますか？' : fmtYM(ym) + 'を締めますか？今の数字で確定して保存します。締めたあとも日報は直せますが、レポートに「確定後に変更あり」と出ます。';
+  if (!confirm(msg)) return;
+  ui.repBusy = true; render();
+  try {
+    await api('closeMonth', { ym });
+    if (data.closings.indexOf(ym) < 0) data.closings.push(ym);
+    Object.keys(data.reports).forEach(k => { if (k.split('|')[1].slice(0, 7) === ym && data.reports[k]) data.reports[k].changedAfterClose = false; });
+    await loadReport(ym);
+    toast(fmtYM(ym) + (r.closed ? 'を確定し直しました' : 'を締めました'));
+  } catch (err) { handleError(err); }
+  finally { ui.repBusy = false; render(); }
+}

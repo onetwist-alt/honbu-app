@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 /* ===== 定数 ===== */
 let DAY_MIN = 660;              // 1日の勤務時間（分）。設定タブの値で上書きする
 let MONTHLY_COST = 300000;      // 月の人件費。設定タブの値で上書きする
@@ -88,7 +88,8 @@ const ui = {
   user:null, mustChange:false, booting:false, saving:false,
   view:'dash', dashDate:T0, dashMonth:ymOf(T0), empId:null, sub:'cal', calMode:'month', calMonth:ymOf(T0), selDate:T0,
   search:'', filter:'open', expanded:{}, attMonth:ymOf(T0), attScrolled:false,
-  wc:null, entry:{kind:'basic',name:'',memo:'',min:60,taskId:''}, modal:null
+  wc:null, entry:{kind:'basic',name:'',memo:'',min:60,taskId:''}, modal:null,
+  repMonth:ymOf(T0), rep:{}, repBusy:false
 };
 /* ===== データ（GASから読み込んだもの） ===== */
 function blankData(){ return {employees:[],workTypes:[],tasks:[],reports:{},attendance:{},closings:[],settings:{monthlyCost:300000,dayHours:11,dayStart:8},months:{},from:'',to:'',loadedAt:0}; }

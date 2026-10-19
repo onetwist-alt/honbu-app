@@ -1,5 +1,5 @@
 /**
- * 本部アプリ（本番）GAS  v1.0.0
+ * 本部アプリ（本番）GAS  v1.3.0
  *
  * スプレッドシート「業務管理データ」に紐づけて使います。
  * はじめて貼り付けたとき・新しい版に貼り替えたときは、setup を1回実行してください。
@@ -8,7 +8,7 @@
  * ・足りない列は右に足すだけで、既存のデータは消しません。
  * ・削除は「削除」の印をつけるだけで、行は消しません（ログインの記録だけは片付けます）。
  */
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.3.0';
 const TZ = 'Asia/Tokyo';
 const SESSION_DAYS = 30;     // ログインしたままにする日数
 const HASH_ROUNDS = 300;     // パスワードを変換する回数
@@ -93,7 +93,9 @@ const HANDLERS = {
   updateEmployee: { write: true, admin: true, fn: hUpdateEmployee_ },
   retireEmployee: { write: true, admin: true, fn: hRetireEmployee_ },
   resetPassword:  { write: true, admin: true, fn: hResetPassword_ },
-  saveSettings:   { write: true, admin: true, fn: hSaveSettings_ }
+  saveSettings:   { write: true, admin: true, fn: hSaveSettings_ },
+  monthReport:    { fn: hMonthReport_ },
+  closeMonth:     { write: true, admin: true, fn: hCloseMonth_ }
 };
 // 仮パスワードのままでも使える操作
 const ALLOWED_BEFORE_CHANGE = ['changePassword', 'logout', 'me'];
@@ -537,6 +539,65 @@ function hSaveSettings_(p, user) {
   return { settings: settingsMap_() };
 }
 
+/* ===== 月次レポート・月の締め ===== */
+// その月の数字をまとめる（締めのときは、これをそのまま保存する）
+function reportData_(x, ym) {
+  const ag = monthAgg_(x, ym);
+  const ymSlash = ym.replace('-', '/');
+  const titleOf = function (id) { const t = T_('tasks').find(id); return t ? t.title + (t.deleted ? '（削除済み）' : '') : '（不明なタスク）'; };
+  return {
+    ym: ym, monthlyCost: x.COST, dayHours: x.DAYMIN / 60, total: ag.total,
+    employees: ag.rows.map(function (rw) {
+      const p = empProg_(x, rw.e.id);
+      return { id: rw.e.id, name: rw.e.name, days: rw.s.days, rate: Math.round(rw.s.rate), cost: rw.cost,
+        basicMin: Math.round(rw.s.basicMin), plusMin: Math.round(rw.s.plusMin),
+        progress: Math.round(p.pct), roots: p.roots, doneRoots: p.done,
+        doneInMonth: x.tasks.filter(function (t) { return t.owner === rw.e.id && t.doneAt && t.doneAt.slice(0, 7) === ymSlash; }).length };
+    }),
+    work: ag.work.map(function (w) { const i = w[0].indexOf('|'); return { kind: w[0].slice(0, i), name: w[0].slice(i + 1), min: Math.round(w[1].min), cost: Math.round(w[1].cost) }; }),
+    task: ag.task.map(function (w) { return { id: w[0], title: titleOf(w[0]), min: Math.round(w[1].min), cost: Math.round(w[1].cost) }; })
+  };
+}
+function hMonthReport_(p) {
+  const ym = /^\d{4}-\d{2}$/.test(String(p.ym || '')) ? p.ym : bizToday_().slice(0, 7);
+  const x = viewCtx_();
+  const closings = {};
+  T_('closings').rows.forEach(function (c) { closings[c.ym] = c; });
+  const c = closings[ym];
+  let rep;
+  if (c && c.data) { rep = c.data; rep.closed = true; rep.closedAt = c.closedAt; rep.closedBy = c.closedBy; }
+  else { rep = reportData_(x, ym); rep.closed = false; }
+  rep.changedAfterClose = !!(c && c.data) && T_('reports').rows.some(function (r) { return r.date.slice(0, 7) === ym && r.changedAfterClose; });
+  rep.canClose = ym < bizToday_().slice(0, 7);
+  rep.current = ym === bizToday_().slice(0, 7);
+  rep.trend = [];
+  for (let i = 5; i >= 0; i--) {
+    const m = shiftYm_(ym, -i), cc = closings[m];
+    const d = cc && cc.data ? cc.data : reportData_(x, m);
+    const sum = function (k) { return (d.employees || []).reduce(function (s, e) { return s + (e[k] || 0); }, 0); };
+    rep.trend.push({ ym: m, basicMin: sum('basicMin'), plusMin: sum('plusMin'), days: sum('days'), cost: d.total || 0, closed: !!(cc && cc.data) });
+  }
+  return rep;
+}
+function hCloseMonth_(p, user) {
+  const ym = String(p.ym || '');
+  if (!/^\d{4}-\d{2}$/.test(ym)) throw appErr_('bad', '年月が正しくありません');
+  if (!(ym < bizToday_().slice(0, 7))) throw appErr_('bad', 'この月はまだ終わっていません。翌月1日の朝8時以降に締めてください');
+  const x = viewCtx_();
+  const data = reportData_(x, ym);
+  const C = T_('closings');
+  const now = nowStr_();
+  const cur = C.find(ym);
+  if (cur) C.update(cur, { closedAt: now, closedBy: user.name, data: data });
+  else C.insert({ ym: ym, closedAt: now, closedBy: user.name, data: data });
+  // 締め直したので、その月の「確定後に変更あり」の印を消す
+  const R = T_('reports');
+  R.rows.filter(function (r) { return r.date.slice(0, 7) === ym && r.changedAfterClose; })
+    .forEach(function (r) { R.update(r, { changedAfterClose: false }); });
+  audit_(user, cur ? '月の締めを確定し直した' : '月を締めた', fmtYM_(ym), '', '人件費の合計 ' + yen_(data.total), 'アプリ');
+  return { ym: ym, closedAt: now, closedBy: user.name };
+}
+
 /* ===== 毎朝の自動処理（定期タスクを作る） ===== */
 function dailyJob() {
   const lock = LockService.getScriptLock();
@@ -653,10 +714,15 @@ function setup() {
     msg = '\n最初の管理者を作りました。\nログインID：honbu\n仮パスワード：' + temp + '\n（最初のログインで新しいパスワードに変えます）';
   }
 
-  if (!ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'dailyJob'; })) {
-    ScriptApp.newTrigger('dailyJob').timeBased().everyDays(1).atHour(DAY_START_HOUR).inTimezone(TZ).create();
-  }
+  const trig = ScriptApp.getProjectTriggers().map(function (t) { return t.getHandlerFunction(); });
+  if (trig.indexOf('dailyJob') < 0) ScriptApp.newTrigger('dailyJob').timeBased().everyDays(1).atHour(DAY_START_HOUR).inTimezone(TZ).create();
+  // 全体把握画面と社員タブを10分ごとに作り直す
+  if (trig.indexOf('refreshViews') < 0) ScriptApp.newTrigger('refreshViews').timeBased().everyMinutes(10).create();
   SpreadsheetApp.flush();
+  for (const k in TBL_) delete TBL_[k];
+  refreshViews();
+  ss.setActiveSheet(ss.getSheetByName(VIEW_SHEET));
+  ss.moveActiveSheet(1);
   Logger.log('準備できました（本部アプリ v' + APP_VERSION + '）。' + msg);
 }
 
@@ -858,4 +924,604 @@ function hashPw_(pw, salt) {
   let h = sha_(salt + ':' + pw);
   for (let i = 0; i < HASH_ROUNDS; i++) h = sha_(h + ':' + salt);
   return h;
+}
+
+/* =====================================================================
+ * スプレッドシートの表示（全体把握画面・社員タブ）  v1.2.0
+ * ・見た目：紺を基調にした業務用レポートの形
+ * ・速さ：日付のマスを押したときは「選んだ日付」を1か所書き換えるだけ。
+ *   その日の内容は、10分ごとに用意しておいた「表示用データ」から数式で表示する
+ * ===================================================================== */
+const VIEW_SHEET = '全体把握画面';
+const VIEW_DATA = '表示用データ';
+const VIEW_COLS = 8;        // A〜H列を使う
+const STATE_COL = 10;       // J列（非表示）に、表示中の年月・日付などを覚えておく
+const C_ = {
+  navy: '#1b2a41', navy2: '#2f4b6e', btn: '#3a6ea5', btnText: '#ffffff', sub: '#6b7585', title: '#1b2a41', text: '#273142',
+  line: '#d9dee7', zebra: '#f6f8fb', card: '#f4f7fb', red: '#c62828', redBg: '#fdf1f1', blue: '#1f6fd1', blueBg: '#f3f7fd',
+  sel: '#d7e6f8', today: '#fff3e0', orange: '#e37400', blank: '#fafbfc', white: '#ffffff', bar: '#3a6ea5'
+};
+
+// 10分ごと（と setup のとき）に動く
+function refreshViews() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return;
+  try {
+    for (const k in TBL_) delete TBL_[k];
+    buildOverview_();
+    buildEmpTabs_();
+  } finally {
+    SpreadsheetApp.flush();
+    lock.releaseLock();
+  }
+}
+
+// 全体把握画面のマスを押したとき
+function onSelectionChange(e) {
+  try {
+    const rg = e && e.range;
+    if (!rg || rg.getNumRows() !== 1 || rg.getNumColumns() !== 1) return;
+    const sh = rg.getSheet();
+    if (sh.getName() !== VIEW_SHEET) return;
+    const r = rg.getRow(), c = rg.getColumn();
+    const st = viewState_(sh);
+    // 日付のマス：選んだ日付を1か所書き換えるだけ（下の表は数式ですぐ切り替わる）
+    if (st.calStart && r >= st.calStart && r < st.calStart + st.weeks && c <= 7) {
+      const n = (r - st.calStart) * 7 + (c - 1) - st.first + 1;
+      if (n < 1 || n > daysIn_(st.ym)) return;
+      const day = st.ym + '-' + pad2_(n);
+      if (day !== st.d) sh.getRange(2, STATE_COL).setValue(day);
+      return;
+    }
+    // 前の月・次の月・最新にする：表を作り直す
+    let ym = st.ym;
+    if (r === 2 && c === 1) ym = shiftYm_(st.ym, -1);
+    else if (r === 2 && c === 7) ym = shiftYm_(st.ym, 1);
+    else if (!(r === 1 && c === 8)) return;
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(15000)) return;
+    try {
+      const now = viewState_(sh);
+      if (!(r === 1 && c === 8) && now.ym === ym) return;
+      sh.getRange(3, 1).setValue('読み込み中…（数秒かかります）');
+      SpreadsheetApp.flush();
+      for (const k in TBL_) delete TBL_[k];
+      buildOverview_(ym, ym === now.ym ? now.d : defaultDay_(ym));
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+/* ---------- 全体把握画面 ---------- */
+function buildOverview_(ymArg, dayArg) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ensureViewSheet_();
+  const st = viewState_(sh);
+  const ym = ymArg || st.ym;
+  const sel = dayArg || (st.d.slice(0, 7) === ym ? st.d : defaultDay_(ym));
+  const x = viewCtx_();
+  const N = x.emps.length;
+  writeViewData_(ss, x, ym);   // その月の毎日の内容を用意しておく
+
+  const o = new Out_();
+  const D = "'" + VIEW_DATA + "'!";
+  const btn = function (v) { return { v: v, b: true, fc: C_.btnText, bg: C_.btn, al: 'center' }; };
+  const band = function (cells, h) { return o.row(cells.map(function (c) { c = typeof c === 'object' ? c : { v: c }; if (!c.bg) c.bg = C_.navy; if (!c.fc) c.fc = C_.white; return c; }), { h: h }); };
+
+  // 見出しの帯
+  band([{ v: '本部アプリ　全体把握画面', b: true, fs: 15 }, '', '', '', '', '', { v: '更新 ' + nowStr_().slice(5, 16), fs: 9, fc: '#b9c4d6', al: 'right' }, btn('↻ 最新にする')], 36);
+  band([btn('◀ 前の月'), { v: fmtYM_(ym), b: true, fs: 16, al: 'center' }, '', '', '', '', btn('次の月 ▶'), ''], 34);
+  o.merge(2, 2, 1, 5);
+  o.row([{ v: '日付のマスを押すと、下の「その日の内容」がすぐ切り替わります。表は10分ごとに自動で最新になります（直接書き換えても元に戻ります）。', fs: 9, fc: C_.sub }], { h: 24 });
+
+  // カレンダー
+  const dows = ['日', '月', '火', '水', '木', '金', '土'];
+  const hr = o.row(dows.map(function (w, i) { return { v: w, b: true, al: 'center', bg: '#e9eef5', fc: i === 0 ? C_.red : i === 6 ? C_.blue : C_.title }; }).concat(['']), { h: 26 });
+  const first = dowOfDay_(ym + '-01'), n = daysIn_(ym);
+  const weeks = Math.ceil((first + n) / 7);
+  const calStart = o.rows.length + 1;
+  const rich = [];
+  for (let w = 0; w < weeks; w++) {
+    const cells = [], rrow = [];
+    for (let i = 0; i < 7; i++) {
+      const num = w * 7 + i - first + 1;
+      if (num < 1 || num > n) { cells.push({ v: '', bg: C_.blank }); rrow.push(null); continue; }
+      const d = ym + '-' + pad2_(num), hol = holName_(d), fut = d > x.today, isToday = d === x.today;
+      const dayColor = fut ? '#9aa3af' : (i === 0 || hol) ? C_.red : i === 6 ? C_.blue : C_.title;
+      const parts = [{ t: String(num), s: { b: true, fs: 12, fc: dayColor } }];
+      if (isToday) parts.push({ t: '  今日', s: { b: true, fs: 9, fc: C_.orange } });
+      if (hol) parts.push({ t: '  ' + hol, s: { fs: 9, fc: C_.red } });
+      if (!fut) {
+        const s = dayStats_(x, d);
+        parts.push({ t: '\n出勤 ' + s.nIn + '/' + N, s: { fs: 9, fc: '#4a5568' } });
+        parts.push({ t: '\n日報 ' + s.nSub, s: { fs: 9, fc: '#4a5568' } });
+        if (s.warn.length) parts.push({ t: '\n未提出 ' + s.warn.length, s: { fs: 9, b: true, fc: C_.red } });
+      }
+      cells.push({ v: parts.map(function (p) { return p.t; }).join(''), wrap: true, va: 'top',
+        bg: isToday ? C_.today : (i === 0 || hol) ? C_.redBg : i === 6 ? C_.blueBg : C_.white });
+      rrow.push(parts);
+    }
+    o.row(cells, { h: 78 });
+    rich.push(rrow);
+  }
+  o.rich(calStart, 1, rich);
+  o.border(hr, 1, weeks + 1, 7, 'all');
+  o.row([], { h: 14 });
+
+  // その日のまとめ（数式で「表示用データ」から引く）
+  const sumTitle = o.row([{ f: '=IFERROR(VLOOKUP($J$2,' + D + '$A:$B,2,FALSE),"")&"　その日のまとめ"', b: true, fs: 13, fc: C_.title }], { h: 30 });
+  o.section(sumTitle);
+  const kl = o.row(['出勤', '欠勤', '未登録', '日報 提出', '日報 未提出'].map(function (v) { return { v: v, fs: 9, fc: C_.sub, bg: C_.card, al: 'center' }; }), { h: 22 });
+  const kv = o.row([3, 4, 5, 6, 7].map(function (k) { return { f: '=IFERROR(VLOOKUP($J$2,' + D + '$A:$G,' + k + ',FALSE),"")', b: true, fs: 15, fc: C_.title, bg: C_.card, al: 'center' }; }), { h: 36 });
+  o.border(kl, 1, 2, 5, 'cards');
+  o.cond('=LEFT($E$' + kv + ',2)<>"0人"', 'E' + kv + ':E' + kv, { fc: C_.red });
+  o.row([], { h: 14 });
+
+  // その日の一人ひとり（数式で人数分の行に広がる）
+  const ppTitle = o.row([{ f: '=IFERROR(VLOOKUP($J$2,' + D + '$A:$B,2,FALSE),"")&"　一人ひとり"', b: true, fs: 13, fc: C_.title }], { h: 30 });
+  o.section(ppTitle);
+  const ph = o.head(['社員', '出勤', '日報', '基本業務', '＋α業務', '業務内容', '', '']);
+  const p0 = o.row([{ f: '=IFERROR(FILTER(' + D + '$J:$O,' + D + '$I:$I=$J$2),"")' }], { h: 24 });
+  for (let i = 1; i < Math.max(N, 1); i++) o.row([], { h: 24 });
+  const pRange = 'A' + p0 + ':H' + (p0 + Math.max(N, 1) - 1);
+  o.cond('=$C' + p0 + '="未提出"', pRange, { fc: C_.red, b: true });
+  o.cond('=ISEVEN(ROW())', pRange, { bg: C_.zebra });
+  o.align(p0, 2, Math.max(N, 1), 1, 'center');
+  o.align(p0, 4, Math.max(N, 1), 2, 'right');
+  o.border(ph, 1, Math.max(N, 1) + 1, 8, 'table');
+  o.row([], { h: 14 });
+
+  // 一人ひとりの進み具合
+  const prTitle = o.row([{ v: '一人ひとりの進み具合', b: true, fs: 13, fc: C_.title }, '', '', { v: '主担当のタスクすべてを比重で計算（一時停止中も含む）', fs: 9, fc: C_.sub }], { h: 30 });
+  o.section(prTitle);
+  const prh = o.head(['社員', '全体の進捗', '', '完了', '期限超過', 'タスク', '進捗', '期限']);
+  let zebra = false;
+  x.emps.forEach(function (e) {
+    zebra = !zebra;
+    const bg = zebra ? C_.white : C_.zebra;
+    const p = empProg_(x, e.id), ts = rootTasks_(x, e.id).sort(function (a, b) { return cmpTask_(x, a, b); });
+    const head = [{ v: e.name, b: true, bg: bg }, { f: spark_(p.pct), bg: bg }, { v: Math.round(p.pct) + '%', b: true, al: 'right', bg: bg, fc: C_.bar },
+      { v: p.done + ' / ' + p.roots, al: 'center', bg: bg }, { v: p.over ? p.over + '件' : '—', al: 'center', fc: p.over ? C_.red : C_.sub, b: p.over > 0, bg: bg }];
+    if (!ts.length) { o.row(head.concat([{ v: '主担当のタスクはありません', fc: C_.sub, bg: bg }, { v: '', bg: bg }, { v: '', bg: bg }]), { h: 26 }); return; }
+    ts.forEach(function (t, i) {
+      const q = x.prog(t), od = overdue_(x, t);
+      const left = i === 0 ? head : [{ v: '', bg: bg }, { v: '', bg: bg }, { v: '', bg: bg }, { v: '', bg: bg }, { v: '', bg: bg }];
+      o.row(left.concat([{ v: t.title + (q >= 100 ? '（完了）' : ''), fc: q >= 100 ? C_.sub : C_.text, bg: bg, wrap: true },
+        { v: Math.round(q) + '%', al: 'right', bg: bg }, { v: t.due ? fmtMD_(t.due) + (od ? '　超過' : '') : '', fc: od ? C_.red : C_.text, b: od, bg: bg }]), { h: 26 });
+    });
+  });
+  o.border(prh, 1, o.rows.length - prh + 1, 8, 'table');
+  o.row([], { h: 14 });
+
+  // 期限超過・重要タスク
+  const taskTable = function (title, list) {
+    const tt = o.row([{ v: title, b: true, fs: 13, fc: C_.title }, '', '', { v: list.length + '件', b: true, fc: list.length && title.indexOf('超過') >= 0 ? C_.red : C_.sub }], { h: 30 });
+    o.section(tt);
+    const h = o.head(['タスク', '', '', '担当', '期限', '進捗', '', '']);
+    if (!list.length) o.row([{ v: 'ありません', fc: C_.sub }], { h: 26 });
+    list.forEach(function (t, i) {
+      const od = overdue_(x, t), bg = i % 2 ? C_.zebra : C_.white;
+      o.row([{ v: t.title, bg: bg }, { v: '', bg: bg }, { v: '', bg: bg }, { v: empNameIn_(x, t.owner), bg: bg },
+        { v: t.due ? fmtMD_(t.due) : '', fc: od ? C_.red : C_.text, b: od, bg: bg }, { v: Math.round(x.prog(t)) + '%', al: 'right', bg: bg }], { h: 26 });
+    });
+    o.border(h, 1, o.rows.length - h + 1, 6, 'table');
+    o.row([], { h: 14 });
+  };
+  taskTable('期限超過のタスク', x.tasks.filter(function (t) { return overdue_(x, t) && !(x.kids[t.id] || []).length; }).sort(function (a, b) { return a.due < b.due ? -1 : 1; }));
+  taskTable('重要タスク（優先度 高）', x.tasks.filter(function (t) { return t.priority === '高' && x.prog(t) < 100; }).sort(function (a, b) { return cmpTask_(x, a, b); }));
+
+  // 今月のまとめ
+  const ag = monthAgg_(x, ym);
+  const mt = o.row([{ v: fmtYM_(ym) + 'のまとめ', b: true, fs: 13, fc: C_.title }, '', '', { v: ym === x.today.slice(0, 7) ? '月の途中なので暫定の数字です' : '', fs: 9, fc: C_.sub }], { h: 30 });
+  o.section(mt);
+  const mh = o.head(['社員', '出勤日数', '時給', '人件費', '基本業務', '＋α業務', '', '']);
+  ag.rows.forEach(function (rw, i) {
+    const bg = i % 2 ? C_.zebra : C_.white;
+    o.row([{ v: rw.e.name, b: true, bg: bg }, { v: rw.s.days + '日', al: 'right', bg: bg }, { v: rw.s.days ? yen_(rw.s.rate) : '—', al: 'right', bg: bg },
+      { v: yen_(rw.cost), al: 'right', bg: bg }, { v: fmtH_(rw.s.basicMin), al: 'right', bg: bg }, { v: fmtH_(rw.s.plusMin), al: 'right', bg: bg }], { h: 26 });
+  });
+  const tot = o.row([{ v: '合計', b: true, bg: '#e9eef5' }, { v: '', bg: '#e9eef5' }, { v: '', bg: '#e9eef5' }, { v: yen_(ag.total), b: true, al: 'right', bg: '#e9eef5' }, { v: '', bg: '#e9eef5' }, { v: '', bg: '#e9eef5' }], { h: 28 });
+  o.border(mh, 1, tot - mh + 1, 6, 'table');
+  o.row([], { h: 14 });
+
+  const wt = o.row([{ v: '業務別の人件費', b: true, fs: 13, fc: C_.title }], { h: 30 });
+  o.section(wt);
+  const wh = o.head(['業務名', '', '区分', '時間', '人件費', '', '', '']);
+  if (!ag.work.length) o.row([{ v: 'この月のデータはありません', fc: C_.sub }], { h: 26 });
+  ag.work.forEach(function (w, i) {
+    const k = w[0].indexOf('|'), bg = i % 2 ? C_.zebra : C_.white;
+    o.row([{ v: w[0].slice(k + 1), bg: bg }, { v: '', bg: bg }, { v: w[0].slice(0, k) === 'plus' ? '＋α業務' : '基本業務', bg: bg }, { v: fmtH_(w[1].min), al: 'right', bg: bg }, { v: yen_(w[1].cost), al: 'right', bg: bg }], { h: 26 });
+  });
+  o.border(wh, 1, o.rows.length - wh + 1, 5, 'table');
+  o.row([], { h: 14 });
+
+  const kt = o.row([{ v: 'タスク別の累計人件費', b: true, fs: 13, fc: C_.title }], { h: 30 });
+  o.section(kt);
+  const kh = o.head(['タスク', '', '', '時間', '人件費', '', '', '']);
+  if (!ag.task.length) o.row([{ v: 'タスクに紐づいた＋α業務はまだありません', fc: C_.sub }], { h: 26 });
+  ag.task.forEach(function (w, i) {
+    const t = x.byId[w[0]], bg = i % 2 ? C_.zebra : C_.white;
+    o.row([{ v: t ? t.title : w[0], bg: bg }, { v: '', bg: bg }, { v: '', bg: bg }, { v: fmtH_(w[1].min), al: 'right', bg: bg }, { v: yen_(w[1].cost), al: 'right', bg: bg }], { h: 26 });
+  });
+  o.border(kh, 1, o.rows.length - kh + 1, 5, 'table');
+
+  // 選んだ日のマスを青くする（日付を押したときは数式だけで色が変わる）
+  o.cond('=AND(A' + calStart + '<>"",IFERROR(VALUE(REGEXEXTRACT(A' + calStart + ',"^\\d+")),0)=VALUE(RIGHT($J$2,2)))',
+    'A' + calStart + ':G' + (calStart + weeks - 1), { bg: C_.sel });
+
+  o.write(sh);
+  if (st.layout !== 'L3') { sh.setHiddenGridlines(true); for (let c = 1; c <= VIEW_COLS; c++) sh.setColumnWidth(c, c === 1 ? 128 : 116); }
+  sh.getRange(1, STATE_COL, 6, 1).setNumberFormat('@').setValues([[ym], [sel], [String(calStart)], [String(first)], ['L3'], [String(weeks)]]);
+}
+
+// その月の毎日の「まとめ」と「一人ひとり」を、非表示の「表示用データ」タブに書いておく
+function writeViewData_(ss, x, ym) {
+  let sh = ss.getSheetByName(VIEW_DATA);
+  if (!sh) sh = ss.insertSheet(VIEW_DATA);
+  if (!sh.isSheetHidden()) { try { sh.hideSheet(); } catch (err) { /* 隠せないときはそのまま */ } }
+  const days = [], people = [];
+  for (let i = 1; i <= daysIn_(ym); i++) {
+    const d = ym + '-' + pad2_(i), s = dayStats_(x, d);
+    days.push([d, fmtMD_(d), s.nIn + '人', s.nOff + '人', s.unreg + '人', s.nSub + '人', s.warn.length ? s.warn.length + '人（' + s.warn.join('、') + '）' : '0人']);
+    x.emps.forEach(function (e) {
+      const key = e.id + '|' + d, a = x.att[key] || '', r = x.reports[key], sub = r && r.status === 'submitted';
+      const items = sub ? (x.items[key] || []).slice().sort(function (p, q) { return p.seq - q.seq; }) : [];
+      const c = calc_(x, items), f = c.over ? x.DAYMIN / c.total : 1;
+      let work = '';
+      if (a === 'in') {
+        work = sub ? items.map(function (it) { return it.name + ' ' + fmtH_(it.min) + (it.memo ? '（' + it.memo + '）' : ''); }).join('、') + (c.other ? (items.length ? '、' : '') + 'その他の基本業務 ' + fmtH_(c.other) : '')
+          : '日報 未提出（その他の基本業務 ' + fmtH_(x.DAYMIN) + ' として計算）';
+      }
+      people.push([d, e.name, a === 'in' ? '〇' : a === 'off' ? '×' : '',
+        sub ? '提出済み' : (r && r.status === 'draft' ? '下書き' : (a === 'in' && d <= x.today ? '未提出' : '')),
+        a === 'in' ? fmtH_(sub ? x.DAYMIN - c.plus * f : x.DAYMIN) : '', a === 'in' && sub ? fmtH_(c.plus * f) : '', work]);
+    });
+  }
+  sh.clearContents();
+  const txt = function (rows) { return rows.map(function (r) { return r.map(function (v) { return v === '' ? '' : "'" + v; }); }); };
+  if (sh.getMaxColumns() < 15) sh.insertColumnsAfter(sh.getMaxColumns(), 15 - sh.getMaxColumns());
+  const need = Math.max(days.length, people.length) + 2;
+  if (sh.getMaxRows() < need) sh.insertRowsAfter(sh.getMaxRows(), need - sh.getMaxRows());
+  if (days.length) sh.getRange(1, 1, days.length, 7).setValues(txt(days));
+  if (people.length) sh.getRange(1, 9, people.length, 7).setValues(txt(people));
+}
+
+/* ---------- 社員ごとのタブ（非表示） ---------- */
+function buildEmpTabs_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const view = ss.getSheetByName(VIEW_SHEET);
+  const ym = view ? viewState_(view).ym : bizToday_().slice(0, 7);
+  const x = viewCtx_();
+  x.allEmps.forEach(function (e) {
+    let sh = empSheet_(ss, e.id);
+    if (!sh) {
+      if (!e.active) return;
+      sh = ss.insertSheet(freeName_(ss, e.name, e.loginId));
+      sh.addDeveloperMetadata('honbu-emp', e.id);
+    } else {
+      const want = e.name;
+      if (sh.getName() !== want && !ss.getSheetByName(want) && !isReservedName_(want)) sh.setName(want);
+    }
+    if (!sh.isSheetHidden()) { try { sh.hideSheet(); } catch (err) { /* 見えるタブが1つだけのときは隠せない */ } }
+    if (!e.active) return;
+    const o = new Out_();
+    o.row([{ v: e.name + (e.title ? '（' + e.title + '）' : ''), b: true, fs: 15 }, { v: '' }, { v: e.shift, fc: '#b9c4d6' }, '', '', '', '', { v: '更新 ' + nowStr_().slice(5, 16), fs: 9, fc: '#b9c4d6', al: 'right' }]
+      .map(function (c) { c = typeof c === 'object' ? c : { v: c }; c.bg = C_.navy; if (!c.fc) c.fc = C_.white; return c; }), { h: 36 });
+    o.row([{ v: 'データ置き場から自動で作る表です。直接書き換えても、次の更新で元に戻ります。', fs: 9, fc: C_.sub }], { h: 24 });
+    const t1 = o.row([{ v: fmtYM_(ym) + 'の日報', b: true, fs: 13, fc: C_.title }], { h: 30 });
+    o.section(t1);
+    const h = o.head(['日付', '出勤', '日報', '区分', '業務名', '時間', 'メモ', '']);
+    let k = 0;
+    for (let i = daysIn_(ym); i >= 1; i--) {
+      const d = ym + '-' + pad2_(i), key = e.id + '|' + d, a = x.att[key] || '', r = x.reports[key];
+      if (!a && !r) continue;
+      const bg = (k++ % 2) ? C_.zebra : C_.white;
+      const items = r ? (x.items[key] || []).slice().sort(function (p, q) { return p.seq - q.seq; }) : [];
+      const stTxt = r ? (r.status === 'submitted' ? '提出済み' : '下書き') : (a === 'in' && d <= x.today ? '未提出' : '');
+      const base = [{ v: fmtMD_(d), b: true, bg: bg }, { v: a === 'in' ? '〇' : a === 'off' ? '×' : '', al: 'center', bg: bg, fc: a === 'in' ? C_.blue : C_.sub },
+        { v: stTxt, fc: stTxt === '未提出' ? C_.red : C_.text, b: stTxt === '未提出', bg: bg }];
+      const blank3 = [{ v: '', bg: bg }, { v: '', bg: bg }, { v: '', bg: bg }];
+      if (!items.length) { o.row(base.concat([{ v: '', bg: bg }, { v: '', bg: bg }, { v: '', bg: bg }, { v: '', bg: bg }]), { h: 24 }); continue; }
+      items.forEach(function (it, j) {
+        o.row((j ? blank3 : base).concat([{ v: it.kind === 'plus' ? '＋α' : '基本', bg: bg, fc: it.kind === 'plus' ? C_.blue : C_.text }, { v: it.name, bg: bg },
+          { v: fmtH_(it.min), al: 'right', bg: bg }, { v: it.memo, bg: bg }]), { h: 24 });
+      });
+    }
+    o.border(h, 1, o.rows.length - h + 1, 7, 'table');
+    o.row([], { h: 14 });
+    const t2 = o.row([{ v: 'タスク', b: true, fs: 13, fc: C_.title }], { h: 30 });
+    o.section(t2);
+    const h2 = o.head(['タスク', '', '', '担当', '進捗', '状態', '期限', '']);
+    const mine = x.tasks.filter(function (t) { return t.owner === e.id || String(t.co || '').split(',').indexOf(e.id) >= 0; })
+      .sort(function (a, b) { return cmpTask_(x, a, b); });
+    if (!mine.length) o.row([{ v: 'タスクはありません', fc: C_.sub }], { h: 24 });
+    mine.forEach(function (t, i) {
+      const q = x.prog(t), od = overdue_(x, t), bg = i % 2 ? C_.zebra : C_.white;
+      o.row([{ v: (t.parent ? '　└ ' : '') + t.title, bg: bg }, { v: '', bg: bg }, { v: '', bg: bg }, { v: t.owner === e.id ? '主担当' : '共同', bg: bg },
+        { v: Math.round(q) + '%', al: 'right', bg: bg }, { v: q >= 100 ? '完了' : t.status, bg: bg }, { v: t.due ? fmtMD_(t.due) : '', fc: od ? C_.red : C_.text, b: od, bg: bg }], { h: 24 });
+    });
+    o.border(h2, 1, o.rows.length - h2 + 1, 7, 'table');
+    o.write(sh);
+    const flag = sh.getRange(1, STATE_COL).getDisplayValue();
+    if (flag !== 'L3') {
+      sh.setHiddenGridlines(true);
+      for (let c = 1; c <= VIEW_COLS; c++) sh.setColumnWidth(c, c === 5 || c === 7 ? 170 : 104);
+      sh.getRange(1, STATE_COL).setNumberFormat('@').setValue('L3');
+    }
+  });
+}
+function empSheet_(ss, empId) {
+  const found = ss.createDeveloperMetadataFinder().withKey('honbu-emp').withValue(empId).find();
+  for (let i = 0; i < found.length; i++) {
+    const loc = found[i].getLocation();
+    if (loc && loc.getSheet && loc.getSheet()) return loc.getSheet();
+  }
+  return null;
+}
+function isReservedName_(name) {
+  return name === VIEW_SHEET || name === VIEW_DATA || name === '通信テスト' || Object.keys(SCHEMA).some(function (k) { return SCHEMA[k].sheet === name; });
+}
+function freeName_(ss, name, loginId) {
+  let n = isReservedName_(name) ? name + '（' + loginId + '）' : name;
+  if (ss.getSheetByName(n)) n = name + '（' + loginId + '）';
+  return n;
+}
+
+/* ---------- 表を書き出す道具 ---------- */
+function Out_() { this.rows = []; this.opts = []; this.borders = []; this.merges = []; this.riches = []; this.conds = []; this.aligns = []; }
+Out_.prototype.row = function (cells, opt) {
+  const r = [];
+  for (let i = 0; i < VIEW_COLS; i++) {
+    const c = cells[i];
+    r.push(c == null ? { v: '' } : (typeof c === 'object' ? c : { v: c }));
+  }
+  this.rows.push(r);
+  this.opts.push(opt || {});
+  return this.rows.length;
+};
+// 表の見出し行（紺の帯に白い文字）
+Out_.prototype.head = function (labels) {
+  return this.row(labels.map(function (v) { return v === '' ? { v: '', bg: C_.navy2 } : { v: v, b: true, fc: C_.white, bg: C_.navy2, fs: 9 }; }).slice(0, VIEW_COLS), { h: 26 });
+};
+// 見出しの下に紺の線を引く
+Out_.prototype.section = function (r) { this.borders.push([r, 1, 1, VIEW_COLS, 'section']); };
+Out_.prototype.border = function (r, c, nr, nc, kind) { if (nr > 0) this.borders.push([r, c, nr, nc, kind]); };
+Out_.prototype.merge = function (r, c, nr, nc) { this.merges.push([r, c, nr, nc]); };
+Out_.prototype.rich = function (r, c, grid) { this.riches.push([r, c, grid]); };
+Out_.prototype.cond = function (formula, a1, style) { this.conds.push([formula, a1, style]); };
+Out_.prototype.align = function (r, c, nr, nc, al) { this.aligns.push([r, c, nr, nc, al]); };
+Out_.prototype.write = function (sh) {
+  const n = Math.max(this.rows.length, 1);
+  if (sh.getMaxRows() < n + 5) sh.insertRowsAfter(sh.getMaxRows(), n + 5 - sh.getMaxRows());
+  if (sh.getMaxColumns() < STATE_COL) sh.insertColumnsAfter(sh.getMaxColumns(), STATE_COL - sh.getMaxColumns());
+  const clearN = Math.min(Math.max(sh.getLastRow(), n) + 2, sh.getMaxRows());
+  const all = sh.getRange(1, 1, clearN, VIEW_COLS);
+  all.breakApart();
+  all.clearContent();
+  all.clearFormat();
+  sh.setConditionalFormatRules([]);
+  sh.setRowHeights(1, clearN, 21);
+  const rows = this.rows, opts = this.opts;
+  const pick = function (f) { return rows.map(function (r, i) { return r.map(function (c) { return f(c, opts[i]); }); }); };
+  const rg = sh.getRange(1, 1, n, VIEW_COLS);
+  // 文字は先頭に ' をつけて、「4/5」などが日付に変わらないようにする（' は表示されない）
+  rg.setValues(pick(function (c) { return c.f ? c.f : (c.v == null || c.v === '' ? '' : "'" + String(c.v)); }));
+  rg.setBackgrounds(pick(function (c) { return c.bg || C_.white; }));
+  rg.setFontColors(pick(function (c) { return c.fc || C_.text; }));
+  rg.setFontWeights(pick(function (c) { return c.b ? 'bold' : 'normal'; }));
+  rg.setFontSizes(pick(function (c) { return c.fs || 10; }));
+  rg.setHorizontalAlignments(pick(function (c) { return c.al || 'left'; }));
+  rg.setVerticalAlignments(pick(function (c) { return c.va || 'middle'; }));
+  rg.setWraps(pick(function (c) { return !!c.wrap; }));
+  // 行の高さ（同じ高さが続く行はまとめて1回で）
+  let i = 0;
+  while (i < n) {
+    const h = (opts[i] && opts[i].h) || 21;
+    let j = i;
+    while (j + 1 < n && ((opts[j + 1] && opts[j + 1].h) || 21) === h) j++;
+    if (h !== 21) sh.setRowHeights(i + 1, j - i + 1, h);
+    i = j + 1;
+  }
+  this.aligns.forEach(function (a) { sh.getRange(a[0], a[1], a[2], a[3]).setHorizontalAlignment(a[4]); });
+  this.merges.forEach(function (m) { sh.getRange(m[0], m[1], m[2], m[3]).merge(); });
+  // カレンダーの文字（日付を太く、未提出を赤く）
+  this.riches.forEach(function (rc) {
+    const grid = rc[2].map(function (row) {
+      return row.map(function (parts) {
+        if (!parts) return SpreadsheetApp.newRichTextValue().setText('').build();
+        const text = parts.map(function (p) { return p.t; }).join('');
+        const b = SpreadsheetApp.newRichTextValue().setText(text);
+        let pos = 0;
+        parts.forEach(function (p) {
+          const ts = SpreadsheetApp.newTextStyle().setBold(!!p.s.b).setFontSize(p.s.fs || 10).setForegroundColor(p.s.fc || C_.text).build();
+          if (p.t.length) b.setTextStyle(pos, pos + p.t.length, ts);
+          pos += p.t.length;
+        });
+        return b.build();
+      });
+    });
+    sh.getRange(rc[0], rc[1], grid.length, grid[0].length).setRichTextValues(grid);
+  });
+  const SOLID = SpreadsheetApp.BorderStyle.SOLID, MED = SpreadsheetApp.BorderStyle.SOLID_MEDIUM;
+  this.borders.forEach(function (b) {
+    const g = sh.getRange(b[0], b[1], b[2], b[3]);
+    if (b[4] === 'section') g.setBorder(null, null, true, null, null, null, C_.navy, MED);
+    else if (b[4] === 'table') g.setBorder(true, null, true, null, null, true, C_.line, SOLID);
+    else if (b[4] === 'cards') g.setBorder(true, true, true, true, true, null, '#ffffff', MED);
+    else g.setBorder(true, true, true, true, true, true, C_.line, SOLID);
+  });
+  if (this.conds.length) {
+    sh.setConditionalFormatRules(this.conds.map(function (cd) {
+      const rb = SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied(cd[0]).setRanges([sh.getRange(cd[1])]);
+      if (cd[2].bg) rb.setBackground(cd[2].bg);
+      if (cd[2].fc) rb.setFontColor(cd[2].fc);
+      if (cd[2].b) rb.setBold(true);
+      return rb.build();
+    }));
+  }
+};
+// 進捗のバー（スプレッドシートの棒グラフ関数）
+function spark_(pct) {
+  const v = Math.max(0, Math.min(100, Math.round(pct))) / 100;
+  return '=SPARKLINE(' + v + ',{"charttype","bar";"max",1;"color1","' + C_.bar + '"})';
+}
+
+function ensureViewSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(VIEW_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(VIEW_SHEET, 0);
+    try {
+      if (sh.getMaxColumns() < STATE_COL) sh.insertColumnsAfter(sh.getMaxColumns(), STATE_COL - sh.getMaxColumns());
+      sh.hideColumns(STATE_COL);
+      // うっかり書き換えないように、編集しようとすると確認が出るようにする
+      sh.protect().setDescription('本部アプリが自動で作る表です').setWarningOnly(true);
+    } catch (err) { console.error(err); }
+  }
+  return sh;
+}
+function viewState_(sh) {
+  const v = sh.getRange(1, STATE_COL, 6, 1).getDisplayValues().map(function (r) { return String(r[0] || '').trim(); });
+  const today = bizToday_();
+  const ym = /^\d{4}-\d{2}$/.test(v[0]) ? v[0] : today.slice(0, 7);
+  return { ym: ym, d: isDate_(v[1]) ? v[1] : today, calStart: Number(v[2]) || 0, first: Number(v[3]) || 0, layout: v[4], weeks: Number(v[5]) || 6 };
+}
+
+/* ---------- 表を作るための計算（アプリと同じ計算） ---------- */
+function viewCtx_() {
+  const settings = settingsMap_();
+  const allEmps = T_('employees').rows.slice().sort(function (a, b) { return a.order - b.order; });
+  const tasks = T_('tasks').rows.filter(function (t) { return !t.deleted; });
+  const kids = {}, byId = {};
+  tasks.forEach(function (t) { byId[t.id] = t; if (t.parent) (kids[t.parent] = kids[t.parent] || []).push(t); });
+  const memo = {};
+  const prog = function (t) {
+    if (memo[t.id] != null) return memo[t.id];
+    const k = kids[t.id] || [];
+    let v;
+    if (k.length) { const w = k.reduce(function (s, y) { return s + (y.weight || 1); }, 0); v = k.reduce(function (s, y) { return s + (y.weight || 1) * prog(y); }, 0) / w; }
+    else v = t.status === '完了' ? 100 : (t.progress || 0);
+    memo[t.id] = v;
+    return v;
+  };
+  const reports = {}, items = {}, att = {};
+  T_('reports').rows.forEach(function (r) { reports[r.id] = r; });
+  T_('items').rows.forEach(function (i) { if (!i.deleted) (items[i.reportId] = items[i.reportId] || []).push(i); });
+  T_('attendance').rows.forEach(function (a) { if (a.status) att[a.id] = a.status; });
+  return { settings: settings, DAYMIN: Math.round(settings.dayHours * 60), COST: settings.monthlyCost,
+    allEmps: allEmps, emps: allEmps.filter(function (e) { return e.active; }),
+    tasks: tasks, kids: kids, byId: byId, prog: prog, reports: reports, items: items, att: att, today: bizToday_() };
+}
+function calc_(x, items) {
+  let plus = 0, basicIn = 0;
+  items.forEach(function (i) { if (i.kind === 'plus') plus += i.min; else basicIn += i.min; });
+  const total = plus + basicIn;
+  return { plus: plus, basicIn: basicIn, total: total, other: Math.max(0, x.DAYMIN - total), over: total > x.DAYMIN };
+}
+function dayStats_(x, d) {
+  let nIn = 0, nOff = 0, nSub = 0;
+  const warn = [];
+  x.emps.forEach(function (e) {
+    const key = e.id + '|' + d, a = x.att[key] || '', r = x.reports[key], s = r && r.status === 'submitted';
+    if (a === 'in') nIn++; else if (a === 'off') nOff++;
+    if (s) nSub++;
+    if (a === 'in' && !s) warn.push(e.name);
+  });
+  return { nIn: nIn, nOff: nOff, unreg: x.emps.length - nIn - nOff, nSub: nSub, warn: warn };
+}
+function overdue_(x, t) { return !!t.due && t.due < x.today && x.prog(t) < 100; }
+function rootTasks_(x, eid) {
+  return x.tasks.filter(function (t) {
+    if (t.owner !== eid) return false;
+    if (!t.parent) return true;
+    const p = x.byId[t.parent];
+    return !p || p.owner !== eid;
+  });
+}
+function empProg_(x, eid) {
+  const roots = rootTasks_(x, eid);
+  let w = 0, s = 0;
+  roots.forEach(function (t) { const ww = t.weight || 1; w += ww; s += ww * x.prog(t); });
+  return { pct: w ? s / w : 0, roots: roots.length, done: roots.filter(function (t) { return x.prog(t) >= 100; }).length,
+    over: x.tasks.filter(function (t) { return t.owner === eid && overdue_(x, t) && !(x.kids[t.id] || []).length; }).length };
+}
+function cmpTask_(x, a, b) {
+  const da = x.prog(a) >= 100, db = x.prog(b) >= 100;
+  if (da !== db) return da ? 1 : -1;
+  const P = { '高': 0, '中': 1, '低': 2 };
+  const p = (P[a.priority] || 1) - (P[b.priority] || 1);
+  if (p) return p;
+  const u = a.due || '9999', v = b.due || '9999';
+  return u < v ? -1 : u > v ? 1 : 0;
+}
+function monthStats_(x, eid, ym) {
+  let days = 0, basicMin = 0, plusMin = 0;
+  const byWork = {}, byTask = {};
+  for (let i = 1; i <= daysIn_(ym); i++) {
+    const d = ym + '-' + pad2_(i);
+    if (d > x.today) break;
+    const key = eid + '|' + d;
+    if (x.att[key] !== 'in') continue;
+    days++;
+    const r = x.reports[key];
+    const items = r && r.status === 'submitted' ? (x.items[key] || []) : [];
+    const c = calc_(x, items), f = c.over ? x.DAYMIN / c.total : 1;
+    items.forEach(function (it) {
+      const k = it.kind + '|' + it.name;
+      byWork[k] = (byWork[k] || 0) + it.min * f;
+      if (it.taskId) byTask[it.taskId] = (byTask[it.taskId] || 0) + it.min * f;
+    });
+    if (c.other > 0) { const k = 'basic|その他の基本業務'; byWork[k] = (byWork[k] || 0) + c.other; }
+    plusMin += c.plus * f;
+    basicMin += x.DAYMIN - c.plus * f;
+  }
+  return { days: days, rate: days ? x.COST / (days * x.DAYMIN / 60) : 0, basicMin: basicMin, plusMin: plusMin, byWork: byWork, byTask: byTask };
+}
+function monthAgg_(x, ym) {
+  const work = {}, task = {};
+  let total = 0;
+  const rows = x.allEmps.map(function (e) {
+    const s = monthStats_(x, e.id, ym), cost = s.days ? x.COST : 0;
+    total += cost;
+    Object.keys(s.byWork).forEach(function (k) { work[k] = work[k] || { min: 0, cost: 0 }; work[k].min += s.byWork[k]; work[k].cost += s.byWork[k] / 60 * s.rate; });
+    Object.keys(s.byTask).forEach(function (k) { task[k] = task[k] || { min: 0, cost: 0 }; task[k].min += s.byTask[k]; task[k].cost += s.byTask[k] / 60 * s.rate; });
+    return { e: e, s: s, cost: cost };
+  }).filter(function (r) { return r.e.active || r.s.days > 0; });
+  const sort = function (o) { return Object.keys(o).map(function (k) { return [k, o[k]]; }).sort(function (a, b) { return b[1].cost - a[1].cost; }); };
+  return { rows: rows, total: total, work: sort(work), task: sort(task) };
+}
+function empNameIn_(x, id) { const e = x.allEmps.filter(function (y) { return y.id === id; })[0]; return e ? e.name : ''; }
+
+/* ---------- 日付などの小道具 ---------- */
+function daysIn_(ym) { return new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0).getDate(); }
+function dowOfDay_(d) { return new Date(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10))).getDay(); }
+function ymOfDay_(d) { return d.slice(0, 7); }
+function shiftYm_(ym, n) { const d = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)) - 1 + n, 1); return d.getFullYear() + '-' + pad2_(d.getMonth() + 1); }
+function defaultDay_(ym) { const t = bizToday_(); return t.slice(0, 7) === ym ? t : ym + '-01'; }
+function fmtYM_(ym) { return Number(ym.slice(0, 4)) + '年' + Number(ym.slice(5, 7)) + '月'; }
+function fmtMD_(d) { return Number(d.slice(5, 7)) + '/' + Number(d.slice(8, 10)) + '（' + '日月火水木金土'[dowOfDay_(d)] + '）'; }
+function fmtH_(min) { const h = Math.round(min / 6) / 10; return (Math.round(h) === h ? String(h) : h.toFixed(1)) + 'h'; }
+function yen_(n) { return '¥' + String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+function bar_(pct) { const k = Math.max(0, Math.min(10, Math.round(pct / 10))); return '■'.repeat(k) + '□'.repeat(10 - k) + ' ' + Math.round(pct) + '%'; }
+const HOL_ = {};
+function holName_(d) {
+  const y = Number(d.slice(0, 4));
+  if (!HOL_[y]) {
+    const h = {};
+    const add = function (m, dd, n) { h[y + '-' + pad2_(m) + '-' + pad2_(dd)] = n; };
+    const nthMon = function (m, n) { const f = new Date(y, m - 1, 1).getDay(); return 1 + ((8 - f) % 7) + (n - 1) * 7; };
+    const k = y - 1980, q = Math.floor(k / 4);
+    add(1, 1, '元日'); add(1, nthMon(1, 2), '成人の日'); add(2, 11, '建国記念の日'); add(2, 23, '天皇誕生日');
+    add(3, Math.floor(20.8431 + 0.242194 * k - q), '春分の日'); add(4, 29, '昭和の日'); add(5, 3, '憲法記念日'); add(5, 4, 'みどりの日'); add(5, 5, 'こどもの日');
+    add(7, nthMon(7, 3), '海の日'); add(8, 11, '山の日'); add(9, nthMon(9, 3), '敬老の日'); add(9, Math.floor(23.2488 + 0.242194 * k - q), '秋分の日');
+    add(10, nthMon(10, 2), 'スポーツの日'); add(11, 3, '文化の日'); add(11, 23, '勤労感謝の日');
+    const nx = function (s) { const t = new Date(Number(s.slice(0, 4)), Number(s.slice(5, 7)) - 1, Number(s.slice(8, 10)) + 1); return t.getFullYear() + '-' + pad2_(t.getMonth() + 1) + '-' + pad2_(t.getDate()); };
+    Object.keys(h).forEach(function (s) { const mid = nx(s); if (h[nx(mid)] && !h[mid] && dowOfDay_(mid) !== 0) h[mid] = '国民の休日'; });
+    Object.keys(h).sort().forEach(function (s) { if (dowOfDay_(s) === 0) { let t = nx(s); while (h[t]) t = nx(t); h[t] = '振替休日'; } });
+    HOL_[y] = h;
+  }
+  return HOL_[y][d] || '';
 }

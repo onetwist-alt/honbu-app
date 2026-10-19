@@ -89,7 +89,7 @@ async function ensureMonths(list){
 }
 async function refreshAll(quiet){
   if (!session.token || !ui.user) return;
-  try { const r = await api('load', { from: data.from, to: data.to }); applyLoad(r); render(); }
+  try { const r = await api('load', { from: data.from, to: data.to }); applyLoad(r); render(); if (ui.view === 'report') loadReport(ui.repMonth); }
   catch (err) { if (!quiet || err.code === 'auth') handleError(err); }
 }
 

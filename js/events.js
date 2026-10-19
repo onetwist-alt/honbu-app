@@ -15,6 +15,7 @@ const ACT={
   'emp-reset'(el){ resetPw(el.dataset.id); },
   'emp-retire'(el){ retireEmp(el.dataset.id); },
   'cost-save'(){ saveCost(); },
+  install(){ doInstall(); },
   'open-report'(el){ if(!guard()) return; ui.modal=null; if(el.dataset.ym) ui.repMonth=el.dataset.ym; ui.view='report'; render(); window.scrollTo(0,0); loadReport(ui.repMonth); },
   'rep-month'(el){ ui.repMonth=addMonths(ui.repMonth,+el.dataset.n); render(); loadReport(ui.repMonth); },
   'rep-close'(){ closeMonth(); },

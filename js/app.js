@@ -1,4 +1,18 @@
 'use strict';
+/* ===== ホーム画面に追加 ===== */
+let installEvt = null;
+const isStandalone = () => (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; if (ui.modal && ui.modal.type === 'settings') renderModal(); });
+window.addEventListener('appinstalled', () => { installEvt = null; toast('ホーム画面に追加しました'); if (ui.modal && ui.modal.type === 'settings') renderModal(); });
+async function doInstall(){
+  if (!installEvt) return;
+  installEvt.prompt();
+  try { await installEvt.userChoice; } catch (e) {}
+  installEvt = null;
+  if (ui.modal && ui.modal.type === 'settings') renderModal();
+}
+if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); }); }
 /* ===== 起動 ===== */
 (function boot(){
   if (session.token) { ui.user = '…'; startApp(); }

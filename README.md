@@ -20,6 +20,7 @@
 | `js/actions.js` | 保存などの操作 |
 | `js/events.js` | ボタンや指の操作の受け取り |
 | `js/app.js` | 起動 |
+| `manifest.webmanifest`・`sw.js`・`icons/` | スマホのホーム画面に追加するための設定とアイコン |
 | `gas/honbu-gas.gs` | Apps Script に貼るコード（控え） |
 
 ## 更新のしかた

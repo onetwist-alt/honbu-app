@@ -824,3 +824,5 @@ table.mt{width:100%;border-collapse:collapse;font-size:calc(13px * var(--fs))}
   .hb-row.wide .hb-v small{display:inline;margin-left:6px}
   .trend{gap:6px;height:170px}
 }
+
+.steps{margin:6px 0 0;padding-left:1.4em;font-size:calc(12.5px * var(--fs));color:var(--text-2);display:grid;gap:4px}

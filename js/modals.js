@@ -74,6 +74,7 @@ function settingsHtml(){
       <div class="set-sec"><h4>文字の大きさ</h4><p>3段階から選べます。この端末だけに反映されます。</p>
         ${seg([['s','小'],['m','標準'],['l','大']],prefs.fs,'set-fs','文字の大きさ')}
         <div class="fs-prev">見本：基本業務 データ取り 2h、＋α業務 会計 3h</div></div>
+      <div class="set-sec"><h4>ホーム画面に追加</h4>${installHtml()}</div>
       <div class="set-sec"><h4>ログイン</h4>${u
         ? `<div class="acct"><span class="avatar">${esc(u.name.slice(0,1))}</span><div style="min-width:0"><div style="font-weight:700">${esc(u.name)} ${u.admin?'<span class="chip acc">管理者</span>':''}</div><div class="muted small">ID：${esc(u.loginId)}・30日間ログインしたままになります</div></div></div><button class="btn btn-block" data-act="logout">${ICON.out}ログアウト</button>`
         : `<p>ログインしていません。</p><button class="btn btn-primary btn-block" data-act="goto-login">ログイン画面へ</button>`}</div>
@@ -109,4 +110,13 @@ function empEditHtml(){
     <label class="check"><input type="checkbox" id="ee-admin" ${e.admin?'checked':''}> 管理者にする</label>
     <p class="muted small" style="margin:0">ログインID（${esc(e.loginId)}）は変えられません。</p></div>`,
     `<button class="btn" data-act="modal-close">キャンセル</button><button class="btn btn-primary" data-act="ee-save">保存</button>`);
+}
+
+function installHtml(){
+  if (isStandalone()) return '<p style="margin:0">ホーム画面のアイコンから開いています。</p>';
+  if (installEvt) return '<p>アイコンを押すと、アプリのように全画面で開けます。</p><button class="btn btn-primary btn-block" data-act="install">ホーム画面に追加する</button>';
+  if (isIOS()) return `<p>iPhoneでは、<b>Safari</b>で開いているときに追加できます。</p>
+    <ol class="steps"><li>画面下（iPadは右上）の共有ボタン（四角から上向きの矢印）を押す</li><li>メニューの中の「<b>ホーム画面に追加</b>」を押す</li><li>右上の「<b>追加</b>」を押す</li></ol>
+    <p style="margin:8px 0 0">追加したアイコンから開くと、最初の1回だけもう一度ログインが必要です。</p>`;
+  return `<p>ブラウザのメニュー（︙ や ≡）から「<b>ホーム画面に追加</b>」または「<b>アプリをインストール</b>」を選ぶと、アイコンから開けるようになります。</p>`;
 }

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>本部アプリ 通信テスト</title>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--text:#1a1f2e;--muted:#5b6476;--line:#d9dde4;--accent:#2f3f7a;--ok:#1f7a4d;--ng:#b42318;color-scheme:light dark}
+@media (prefers-color-scheme: dark){:root{--bg:#10131b;--card:#181c26;--text:#e6e9f1;--muted:#9aa3b5;--line:#2c3343;--accent:#9aa8e8;--ok:#5fc193;--ng:#f08072}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:"Hiragino Sans","Noto Sans JP","Yu Gothic UI",Meiryo,system-ui,sans-serif;line-height:1.6}
+main{max-width:640px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:20px;margin:0 0 4px}
+p{margin:0 0 12px;color:var(--muted);font-size:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-top:14px}
+label{display:block;font-size:13px;font-weight:700;margin-bottom:4px}
+input{width:100%;font:inherit;font-size:16px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text)}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+button{font:inherit;font-weight:700;font-size:15px;padding:10px 16px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;flex:1;min-width:140px}
+button.sub{background:transparent;color:var(--accent)}
+button:disabled{opacity:.5;cursor:wait}
+#result{white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,Consolas,monospace;font-size:13px;background:var(--bg);border-radius:8px;padding:12px;min-height:60px;margin-top:12px}
+.ok{color:var(--ok);font-weight:700}.ng{color:var(--ng);font-weight:700}
+</style>
+</head>
+<body>
+<main>
+  <h1>本部アプリ 通信テスト</h1>
+  <p>GitHubに置いたこのページから、GAS経由でスプレッドシートに読み書きできるかを確かめます。</p>
+
+  <div class="card">
+    <label for="url">GASのウェブアプリのURL</label>
+    <input id="url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off">
+    <p style="margin-top:6px;font-size:12px">URLはこの端末のブラウザにだけ保存されます。GitHubには載りません。</p>
+  </div>
+
+  <div class="card">
+    <label for="text">書き込む文字</label>
+    <input id="text" value="通信テストです">
+    <div class="row">
+      <button id="read" class="sub">① 読み込みテスト</button>
+      <button id="write">② 書き込みテスト</button>
+    </div>
+    <div id="status" style="margin-top:12px;font-size:14px"></div>
+    <div id="result">ここに結果が出ます</div>
+  </div>
+</main>
+<script>
+(function(){
+  var KEY='honbu-test-url';
+  var url=document.getElementById('url'), text=document.getElementById('text');
+  var st=document.getElementById('status'), out=document.getElementById('result');
+  var bR=document.getElementById('read'), bW=document.getElementById('write');
+  try{ url.value=localStorage.getItem(KEY)||''; }catch(e){}
+  url.addEventListener('change',function(){ try{ localStorage.setItem(KEY,url.value.trim()); }catch(e){} });
+
+  function check(){
+    var u=url.value.trim();
+    if(!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(u)){
+      st.innerHTML='<span class="ng">URLの形が違います。</span>「https://script.google.com/macros/s/」で始まり「/exec」で終わるURLを入れてください。';
+      return null;
+    }
+    try{ localStorage.setItem(KEY,u); }catch(e){}
+    return u;
+  }
+  function busy(on){ bR.disabled=on; bW.disabled=on; if(on){ st.textContent='通信中…'; } }
+  function show(ok,label,data,ms){
+    st.innerHTML=(ok?'<span class="ok">成功</span>':'<span class="ng">失敗</span>')+'：'+label+'（'+ms+'ミリ秒）';
+    out.textContent=typeof data==='string'?data:JSON.stringify(data,null,2);
+  }
+  function run(label,req){
+    var u=check(); if(!u) return;
+    busy(true); var t0=Date.now();
+    fetch(u,req).then(function(r){ return r.json(); })
+      .then(function(j){ show(!!j.ok,label,j,Date.now()-t0); })
+      .catch(function(err){
+        show(false,label,'通信できませんでした。\n'+String(err)+'\n\nGASのデプロイで「アクセスできるユーザー」が「全員」になっているか確認してください。',Date.now()-t0);
+      })
+      .finally(function(){ busy(false); });
+  }
+  bR.addEventListener('click',function(){ run('読み込み',{method:'GET'}); });
+  bW.addEventListener('click',function(){
+    var id='t'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+    // text/plain で送ると、ブラウザの事前確認（GASが受け付けない）が起きない
+    run('書き込み',{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'write',text:text.value,requestId:id})});
+  });
+})();
+</script>
+</body>
+</html>

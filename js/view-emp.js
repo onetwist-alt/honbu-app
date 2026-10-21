@@ -10,7 +10,7 @@ function renderEmp(){
       <div class="muted small" style="margin-top:2px">進捗メーター：主担当のタスクすべてを比重で計算（一時停止中も含む）</div></div></div>
   <div class="subtabs"><div class="seg"><button class="${ui.sub==='cal'?'on':''}" data-act="sub" data-s="cal">カレンダー・日報</button><button class="${ui.sub==='task'?'on':''}" data-act="sub" data-s="task">タスク</button></div></div>
   <div class="emp-layout" data-sub="${ui.sub}">
-    <div class="panel p-cal">${calCard(e.id)}${reportCard(e.id,ui.selDate)}</div>
+    <div class="panel p-cal"><div id="calcard">${calCard(e.id)}</div><div id="repcard">${reportCard(e.id,ui.selDate)}</div></div>
     <div class="panel p-task">${tasksCard(e.id)}</div>
   </div>`;
 }

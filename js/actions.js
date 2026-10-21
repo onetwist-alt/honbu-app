@@ -13,7 +13,7 @@ function addEntry(){
   if (!name) { toast('業務名を選ぶか、入力してください'); const i = document.getElementById('en-name'); if (i) i.focus(); return; }
   wc.items.push({ id: uid(), kind: ui.entry.kind, name, memo: (ui.entry.memo || '').trim(), min: ui.entry.min, taskId: ui.entry.kind === 'plus' ? ui.entry.taskId : '' });
   ui.entry.name = ''; ui.entry.memo = ''; ui.entry.taskId = '';
-  render(); toast('追加しました。最後に「下書き保存」か「日報を提出」を押してください');
+  renderEmpParts(false); toast('追加しました。最後に「下書き保存」か「日報を提出」を押してください');
 }
 async function saveReport(status){
   if (ui.saving) return;
@@ -42,6 +42,7 @@ const sameTask = (a, b) => JSON.stringify(wire(a)) === JSON.stringify(wire(b));
 async function commitTasks(mutate, msg, undoable){
   const snap = clone(data.tasks);
   mutate();
+  invalidate();
   const changed = data.tasks.filter(t => { const o = snap.find(x => x.id === t.id); return !o || !sameTask(o, t); });
   render();
   if (!changed.length) return true;
@@ -52,7 +53,7 @@ async function commitTasks(mutate, msg, undoable){
     else if (msg) toast(msg);
     return true;
   } catch (err) {
-    data.tasks = snap; render(); handleError(err);
+    data.tasks = snap; invalidate(); render(); handleError(err);
     return false;
   }
 }

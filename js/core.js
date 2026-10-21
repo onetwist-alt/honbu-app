@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.2.1';
 /* ===== 定数 ===== */
 let DAY_MIN = 660;              // 1日の勤務時間（分）。設定タブの値で上書きする
 let MONTHLY_COST = 300000;      // 月の人件費。設定タブの値で上書きする
@@ -113,13 +113,28 @@ function calc(items){
 // 11時間を超えた日は割合で11時間分に縮める
 function scaled(c){ if(!c.over) return {plus:c.plus,basic:DAY_MIN-c.plus}; const p=c.plus*DAY_MIN/c.total; return {plus:p,basic:DAY_MIN-p}; }
 
-const live = () => data.tasks.filter(t=>!t.deleted);
-const kidsOf = id => live().filter(t=>t.parent===id);
+// タスクの親子関係と進捗は、画面を描くたびに1回だけ計算して使い回す（タスクが増えても重くならないように）
+let TM = null;
+function invalidate(){ TM = null; }
+function tm(){
+  if (TM) return TM;
+  const lv = data.tasks.filter(t=>!t.deleted), kids = {};
+  lv.forEach(t=>{ if (t.parent) (kids[t.parent] = kids[t.parent] || []).push(t); });
+  TM = { live: lv, kids, prog: {} };
+  return TM;
+}
+const live = () => tm().live;
+const kidsOf = id => tm().kids[id] || [];
 function descIds(id){ const out=[]; data.tasks.filter(t=>t.parent===id).forEach(k=>{ out.push(k.id); out.push(...descIds(k.id)); }); return out; }
 function prog(t){
-  const k=kidsOf(t.id);
-  if(k.length){ const w=k.reduce((s,x)=>s+(+x.weight||1),0); return k.reduce((s,x)=>s+(+x.weight||1)*prog(x),0)/w; }
-  return t.status==='完了' ? 100 : (+t.progress||0);
+  const M = tm();
+  if (M.prog[t.id] != null) return M.prog[t.id];
+  const k = kidsOf(t.id);
+  let v;
+  if (k.length) { const w = k.reduce((s,x)=>s+(+x.weight||1),0); v = k.reduce((s,x)=>s+(+x.weight||1)*prog(x),0)/w; }
+  else v = t.status==='完了' ? 100 : (+t.progress||0);
+  M.prog[t.id] = v;
+  return v;
 }
 const done = t => prog(t)>=100;
 const overdue = t => !!t.due && t.due<bizToday() && !done(t);

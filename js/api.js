@@ -45,7 +45,7 @@ function applySettings(s){
 function applyLoad(r){
   data.employees = r.employees || [];
   data.workTypes = r.workTypes || [];
-  data.tasks = r.tasks || [];
+  data.tasks = r.tasks || []; invalidate();
   data.closings = r.closings || [];
   applySettings(r.settings);
   data.reports = r.reports || {};
@@ -70,6 +70,7 @@ function mergeRange(r){
   if (!data.to || r.to > data.to) data.to = r.to;
 }
 function mergeTasks(list){
+  invalidate();
   (list || []).forEach(t => {
     const i = data.tasks.findIndex(x => x.id === t.id);
     if (t.deleted) { if (i >= 0) data.tasks.splice(i, 1); return; }
@@ -87,9 +88,15 @@ async function ensureMonths(list){
     render();
   } catch (err) { handleError(err); }
 }
+let lastSig = '';
 async function refreshAll(quiet){
   if (!session.token || !ui.user) return;
-  try { const r = await api('load', { from: data.from, to: data.to }); applyLoad(r); render(); if (ui.view === 'report') loadReport(ui.repMonth); }
+  try {
+    const r = await api('load', { from: data.from, to: data.to });
+    const sig = JSON.stringify([r.employees, r.workTypes, r.tasks, r.reports, r.attendance, r.settings, r.closings]);
+    if (sig === lastSig) { data.loadedAt = Date.now(); return; }
+    lastSig = sig; applyLoad(r); render(); if (ui.view === 'report') loadReport(ui.repMonth);
+  }
   catch (err) { if (!quiet || err.code === 'auth') handleError(err); }
 }
 

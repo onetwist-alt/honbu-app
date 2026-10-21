@@ -1,6 +1,6 @@
 // 本部アプリ：ホーム画面から開いたときのための仕組み
 // いつもは最新のファイルを取りに行き（古い画面が残らないように）、電波がないときだけ保存しておいた画面を使う
-const CACHE = 'honbu-v1.2.0';
+const CACHE = 'honbu-v1.2.1';
 self.addEventListener('install', () => { self.skipWaiting(); });
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys()

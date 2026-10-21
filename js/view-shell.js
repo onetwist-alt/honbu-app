@@ -68,6 +68,7 @@ function shell(){
 /* ===== 表示 ===== */
 const app=document.getElementById('app');
 function render(){
+  invalidate();
   const keep={};
   ['att-wrap'].forEach(id=>{ const el=document.getElementById(id); if(el) keep[id]=el.scrollLeft; });
   if(!session.token || !ui.user) app.innerHTML = loginHtml();
@@ -81,7 +82,15 @@ function render(){
   }
   renderModal();
 }
-function refreshTasks(){ const el=document.getElementById('tasklist'); if(el) el.innerHTML=taskListHtml(ui.empId); }
+function refreshTasks(){ invalidate(); const el=document.getElementById('tasklist'); if(el) el.innerHTML=taskListHtml(ui.empId); }
+// 社員ページで、カレンダーと日報の欄だけを描き直す（ページ全体を描き直すより軽い）
+function renderEmpParts(both){
+  if (ui.view !== 'emp' || !document.getElementById('repcard')) { render(); return; }
+  invalidate();
+  if (both) { const c = document.getElementById('calcard'); if (c) c.innerHTML = calCard(ui.empId); }
+  const r = document.getElementById('repcard'); if (r) r.innerHTML = reportCard(ui.empId, ui.selDate);
+  renderModal();
+}
 let toastTimer=null;
 function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.className='show'; clearTimeout(toastTimer); undoSnap=null; toastTimer=setTimeout(()=>{ t.className=''; },3200); }
 // 指が当たってしまったときのために、しばらく「元に戻す」を出す

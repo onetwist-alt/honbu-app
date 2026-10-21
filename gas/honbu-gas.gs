@@ -1,5 +1,5 @@
 /**
- * 本部アプリ（本番）GAS  v1.3.0
+ * 本部アプリ（本番）GAS  v1.3.1
  *
  * スプレッドシート「業務管理データ」に紐づけて使います。
  * はじめて貼り付けたとき・新しい版に貼り替えたときは、setup を1回実行してください。
@@ -8,7 +8,7 @@
  * ・足りない列は右に足すだけで、既存のデータは消しません。
  * ・削除は「削除」の印をつけるだけで、行は消しません（ログインの記録だけは片付けます）。
  */
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.3.1';
 const TZ = 'Asia/Tokyo';
 const SESSION_DAYS = 30;     // ログインしたままにする日数
 const HASH_ROUNDS = 300;     // パスワードを変換する回数
@@ -79,7 +79,7 @@ const HANDLERS = {
   ping:           { public: true, fn: function () { return { app: '本部アプリ', version: APP_VERSION, time: nowStr_() }; } },
   login:          { public: true, write: true, fn: hLogin_ },
   logout:         { write: true, fn: hLogout_ },
-  me:             { fn: function (p, u) { return { me: empPub_(u.emp), mustChange: u.mustChange }; } },
+  me:             { fn: function (p, u) { return { me: empPub_(T_('employees').find(u.id)), mustChange: u.mustChange }; } },
   changePassword: { write: true, fn: hChangePassword_ },
   load:           { fn: hLoad_ },
   loadRange:      { fn: hLoadRange_ },
@@ -145,17 +145,22 @@ function auth_(token) {
   if (token.length < 20) return null;
   const h = sha_(token);
   const cache = CacheService.getScriptCache();
-  let empId = cache.get('ss:' + h);
-  if (!empId) {
-    const s = T_('sessions').find(h);
-    if (!s || s.expires < Date.now()) return null;
-    empId = s.empId;
-    cache.put('ss:' + h, empId, 600);
-  }
-  const e = T_('employees').find(empId);
+  // 数分間はログインの確認結果を覚えておき、シートを読まずに済ませる（速くするため）
+  const hit = cache.get('us:' + h);
+  if (hit) { try { const u = JSON.parse(hit); u.tokenHash = h; return u; } catch (e) { /* 読めなければ確かめ直す */ } }
+  const s = T_('sessions').find(h);
+  if (!s || s.expires < Date.now()) return null;
+  const e = T_('employees').find(s.empId);
   if (!e || !e.active) return null;
-  const a = T_('auth').find(empId, 'empId');
-  return { id: e.id, name: e.name, admin: e.admin, emp: e, mustChange: a ? a.mustChange : false, tokenHash: h };
+  const a = T_('auth').find(e.id, 'empId');
+  const u = { id: e.id, name: e.name, admin: e.admin, mustChange: a ? a.mustChange : false };
+  cache.put('us:' + h, JSON.stringify(u), 300);
+  u.tokenHash = h;
+  return u;
+}
+function forgetLogin_(empId) {
+  const cache = CacheService.getScriptCache();
+  T_('sessions').rows.forEach(function (s) { if (s.empId === empId) cache.remove('us:' + s.tokenHash); });
 }
 
 function hLogin_(p) {
@@ -189,7 +194,7 @@ function hLogout_(p, user) {
   const S = T_('sessions');
   const s = S.find(user.tokenHash);
   if (s) S.removeRow(s);
-  CacheService.getScriptCache().remove('ss:' + user.tokenHash);
+  CacheService.getScriptCache().remove('us:' + user.tokenHash);
   return { done: true };
 }
 
@@ -203,6 +208,7 @@ function hChangePassword_(p, user) {
   if (newPw === oldPw) throw appErr_('bad', '今とは違うパスワードにしてください');
   const salt = Utilities.getUuid();
   A.update(a, { hash: hashPw_(newPw, salt), salt: salt, mustChange: false, updatedAt: nowStr_() });
+  forgetLogin_(user.id);
   audit_(user, 'パスワードを変更', user.name, '', '', 'アプリ');
   return { done: true };
 }
@@ -227,7 +233,7 @@ function revokeSessions_(empId) {
   const cache = CacheService.getScriptCache();
   S.rows.filter(function (s) { return s.empId === empId; })
     .sort(function (x, y) { return y._row - x._row; })
-    .forEach(function (s) { cache.remove('ss:' + s.tokenHash); S.removeRow(s); });
+    .forEach(function (s) { cache.remove('us:' + s.tokenHash); S.removeRow(s); });
 }
 
 /* ===== 読み込み ===== */
@@ -236,7 +242,7 @@ function hLoad_(p, user) {
   const from = isDate_(p.from) ? p.from : monthEdge_(today, -1, true);
   const to = isDate_(p.to) ? p.to : monthEdge_(today, 1, false);
   const out = {
-    me: empPub_(user.emp), mustChange: user.mustChange, serverToday: today, version: APP_VERSION,
+    me: empPub_(T_('employees').find(user.id)), mustChange: user.mustChange, serverToday: today, version: APP_VERSION,
     settings: settingsMap_(),
     employees: T_('employees').rows.map(empPub_),
     workTypes: T_('workTypes').rows.map(wtPub_),
@@ -307,13 +313,15 @@ function hSaveReport_(p, user) {
   const keep = {};
   list.forEach(function (x) { keep[x.id] = true; });
   existing.forEach(function (e) { if (!keep[e.id]) I.update(e, { deleted: true, updatedAt: now }); });
+  const adds = [];
   list.forEach(function (x) {
     const e = existing.filter(function (y) { return y.id === x.id; })[0];
     const row = { id: x.id, reportId: key, empId: user.id, date: date, kind: x.kind, name: x.name, min: x.min,
       memo: x.memo, taskId: x.taskId, seq: x.seq, deleted: false, updatedAt: now };
-    if (!e) I.insert(row);
+    if (!e) adds.push(row);
     else if (e.kind !== row.kind || e.name !== row.name || e.min !== row.min || e.memo !== row.memo || e.taskId !== row.taskId || e.seq !== row.seq) I.update(e, row);
   });
+  I.insertMany(adds);
   let autoAttend = false;
   if (status === 'submitted') {
     // 日報を出した日は自動で出勤にする
@@ -500,6 +508,7 @@ function hUpdateEmployee_(p, user) {
     admin: admin, order: p.order != null ? Number(p.order) || e.order : e.order,
     updatedAt: nowStr_(), version: e.version + 1
   });
+  forgetLogin_(n.id);
   audit_(user, '社員を更新', n.name, '', '', 'アプリ');
   return { employee: empPub_(n) };
 }
@@ -803,6 +812,15 @@ Table_.prototype.insert = function (o) {
   this.rows.push(n);
   return n;
 };
+Table_.prototype.insertMany = function (list) {
+  if (!list.length) return [];
+  const self = this;
+  const rows = list.map(function (o) { return self.toRow_(o, null); });
+  const r = this.sh.getLastRow() + 1;
+  if (r + rows.length - 1 > this.sh.getMaxRows()) this.sh.insertRowsAfter(this.sh.getMaxRows(), rows.length + 200);
+  this.sh.getRange(r, 1, rows.length, this.width).setValues(rows);
+  return rows.map(function (row, i) { const n = self.toObj_(row); n._row = r + i; n._raw = row; self.rows.push(n); return n; });
+};
 Table_.prototype.update = function (cur, changes) {
   const merged = {};
   for (const k in cur) merged[k] = cur[k];
@@ -887,7 +905,10 @@ function audit_(user, action, target, before, after, via) {
 function appendAudit_(by, action, target, before, after, via) {
   const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SCHEMA.audit.sheet);
   if (!sh) return;
-  const hdr = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0].map(String);
+  const cache = CacheService.getScriptCache();
+  let hdr = null;
+  try { hdr = JSON.parse(cache.get('audHdr') || 'null'); } catch (e) { hdr = null; }
+  if (!hdr) { hdr = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0].map(String); cache.put('audHdr', JSON.stringify(hdr), 21600); }
   const row = new Array(hdr.length).fill('');
   const put = function (label, val) { const i = hdr.indexOf(label); if (i >= 0) row[i] = String(val == null ? '' : val).slice(0, 500); };
   put('日時', nowStr_()); put('操作した人', by); put('操作', action); put('対象', target);

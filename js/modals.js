@@ -103,7 +103,7 @@ function tempHtml(){
 }
 function empEditHtml(){
   const e=emp(ui.modal.id); if(!e) return '';
-  return modalFrame('ee-title','社員の情報を直す',`<div style="display:grid;gap:12px">
+  return modalFrame('ee-head','社員の情報を直す',`<div style="display:grid;gap:12px">
     <label class="fl">氏名<input class="inp" id="ee-name" value="${esc(e.name)}" autocomplete="off"></label>
     <label class="fl">肩書き（任意）<input class="inp" id="ee-title" value="${esc(e.title||'')}" autocomplete="off"></label>
     <label class="fl">勤務<select class="inp" id="ee-shift"><option ${e.shift==='夜勤'?'selected':''}>夜勤</option><option ${e.shift==='日勤'?'selected':''}>日勤</option></select></label>

@@ -16,13 +16,14 @@ function renderModal(){
   const v=t||{title:'',detail:'',owner:p.owner||ui.user,co:[],priority:'中',weight:1,progress:0,status:'未着手',start:today,due:'',parent:p.parent||null,rec:null,memo:''};
   const nk=t?kidsOf(t.id).length:0;
   const excl=new Set(t?[t.id].concat(descIds(t.id)):[]);
-  const parents=live().filter(x=>!excl.has(x.id)).sort(cmpTask);
+  const ro = !!t && !canEdit(t);
+  const parents=live().filter(x=>!excl.has(x.id) && (canEdit(x) || x.id===v.parent)).sort(cmpTask);
   const rec=v.rec||{type:'weekly',dow:dowOf(today),dom:parseYmd(today).getDate()};
   ui.modal.pri=v.priority;
   root.dataset.for=String(ui.modal.id)+'|'+String(p.parent||'');
   root.innerHTML=`<div class="mb" data-act="modal-bg"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="m-title">
     <div class="m-h"><h3 id="m-title">${t?'タスクを編集':(v.parent?'子タスクを追加':'タスクを追加')}</h3><button class="ib" data-act="modal-close" aria-label="閉じる">${ICON.x}</button></div>
-    <div class="m-b">
+    <div class="m-b">${ro?`<div class="banner info full">${ICON.info}<div>${esc(empName(t.owner))}さんのタスクなので、見るだけです。直せるのは、担当者・共同担当・作った人・管理者です。</div></div>`:''}
       <label class="fl full">タスク名<input class="inp" id="tf-title" value="${esc(v.title)}" placeholder="例：今月分の会計締め"></label>
       <label class="fl full">詳細説明<textarea class="inp" id="tf-detail" rows="2">${esc(v.detail)}</textarea></label>
       <label class="fl">担当（主担当）<select class="inp" id="tf-owner">${staff().map(e=>`<option value="${e.id}" ${v.owner===e.id?'selected':''}>${esc(e.name)}</option>`).join('')}</select></label>
@@ -43,8 +44,9 @@ function renderModal(){
         <div class="muted small" style="margin-top:4px;font-weight:400">決まった日の朝8時に、次の分を自動で作ります（試作では作られません）。</div></div>
       <label class="fl full">メモ<textarea class="inp" id="tf-memo" rows="2">${esc(v.memo)}</textarea></label>
     </div>
-    <div class="m-f">${t?`<button class="btn btn-danger" data-act="tf-delete">削除</button><button class="btn" data-act="tf-child">${ICON.plus}子タスクを追加</button>`:''}<span class="sp"></span><button class="btn" data-act="modal-close">キャンセル</button><button class="btn btn-primary" data-act="tf-save">保存</button></div>
+    <div class="m-f">${t&&!ro?`<button class="btn btn-danger" data-act="tf-delete">削除</button><button class="btn" data-act="tf-child">${ICON.plus}子タスクを追加</button>`:''}<span class="sp"></span>${ro?'<button class="btn btn-primary" data-act="modal-close">閉じる</button>':'<button class="btn" data-act="modal-close">キャンセル</button><button class="btn btn-primary" data-act="tf-save">保存</button>'}</div>
   </div></div>`;
+  if(ro) root.querySelectorAll('.m-b input, .m-b select, .m-b textarea, .m-b .seg button').forEach(el=>{ el.disabled=true; });
   document.body.classList.add('noscroll');
 }
 function itemHtml(){

@@ -826,3 +826,11 @@ table.mt{width:100%;border-collapse:collapse;font-size:calc(13px * var(--fs))}
 }
 
 .steps{margin:6px 0 0;padding-left:1.4em;font-size:calc(12.5px * var(--fs));color:var(--text-2);display:grid;gap:4px}
+
+.tchk.ro{cursor:default;opacity:.55;border-style:dashed}
+.m-b .banner.full{grid-column:1/-1}
+.ab.ro{cursor:default;display:grid;place-items:center;margin:0 auto}
+@media (hover:hover){.ab.ro:hover{background:none}}
+.att tr.mine .sticky{box-shadow:inset 3px 0 0 var(--accent)}
+.att-status{font-size:calc(12px * var(--fs));color:var(--muted);margin-left:auto}
+.att-status.on{color:var(--accent);font-weight:700}

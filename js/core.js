@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '1.2.1';
+const APP_VERSION = '1.3.2';
 /* ===== 定数 ===== */
 let DAY_MIN = 660;              // 1日の勤務時間（分）。設定タブの値で上書きする
 let MONTHLY_COST = 300000;      // 月の人件費。設定タブの値で上書きする
@@ -137,6 +137,9 @@ function prog(t){
   return v;
 }
 const done = t => prog(t)>=100;
+// 出勤を変えられるのは、本人と管理者だけ
+function canAtt(empId){ const u=me(); return !!u && (u.admin || u.id===empId); }
+function canEdit(t){ const u=me(); return !!t && !!u && (u.admin || t.owner===u.id || (t.co||[]).includes(u.id) || t.createdBy===u.id); }
 const overdue = t => !!t.due && t.due<bizToday() && !done(t);
 function rootTasks(eid){ return live().filter(t=>{ if(t.owner!==eid) return false; if(!t.parent) return true; const p=taskById(t.parent); return !p || p.deleted || p.owner!==eid; }); }
 function empProg(eid){

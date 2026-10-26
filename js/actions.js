@@ -59,8 +59,9 @@ async function commitTasks(mutate, msg, undoable){
 }
 function leaves(t){ const k = kidsOf(t.id); return k.length ? k.reduce((a, x) => a.concat(leaves(x)), []) : [t]; }
 function completeLeaves(t){ leaves(t).forEach(l => { if (l.status !== '完了') { l.prevProgress = l.progress; l.status = '完了'; l.progress = 100; l.autoDone = true; } }); }
+function denyIfOthers(t){ if (canEdit(t)) return false; toast('他の人のタスクは操作できません'); return true; }
 function toggleDone(id){
-  const t = taskById(id); if (!t) return;
+  const t = taskById(id); if (!t || denyIfOthers(t)) return;
   const wasDone = done(t);
   commitTasks(() => {
     const ls = leaves(t), isLeaf = ls.length === 1 && ls[0] === t;
@@ -75,12 +76,13 @@ function toggleDone(id){
   }, wasDone ? '完了を取り消しました' : '完了にしました（100%）', true);
 }
 function togglePause(id){
-  const t = taskById(id); if (!t) return;
+  const t = taskById(id); if (!t || denyIfOthers(t)) return;
   const toPause = t.status !== '一時停止';
   commitTasks(() => { t.status = toPause ? '一時停止' : '進行中'; }, toPause ? '一時停止にしました。進捗はそのまま残ります' : '再開しました', true);
 }
 function setProgress(id, v){
-  const t = taskById(id); if (!t) return;
+  const t = taskById(id); if (!t || denyIfOthers(t)) { render(); return; }
+  if (v >= 100 && !done(t) && !confirm('「' + t.title + '」を100%にすると完了になります。完了にしてよいですか？')) { render(); return; }
   commitTasks(() => {
     if (v >= 100) { if (t.status !== '完了') t.prevProgress = t.progress; t.progress = 100; t.status = '完了'; t.autoDone = false; }
     else { t.progress = v; if (t.status === '完了' || (t.status === '未着手' && v > 0)) t.status = '進行中'; }
@@ -120,6 +122,7 @@ async function saveTaskForm(){
   if (g('tf-rec-on').checked) { const ty = g('tf-rec-type').value; f.rec = ty === 'weekly' ? { type: ty, dow: +g('tf-rec-dow').value } : ty === 'monthly' ? { type: ty, dom: +g('tf-rec-dom').value } : { type: ty }; }
   else f.rec = null;
   const pr = g('tf-prog');
+  if (pr && +pr.value >= 100 && prevStatus !== '完了' && f.status !== '完了' && !confirm('進捗を100%にすると完了になります。完了にしてよいですか？')) return;
   const btn = $('[data-act="tf-save"]'); if (btn) btn.disabled = true;
   const moved = !isNew && prevOwner !== owner;
   const ok = await commitTasks(() => {
@@ -149,17 +152,47 @@ async function deleteTaskForm(){
 }
 
 /* ===== 出勤の操作 ===== */
-const attQueue = {};
+// 出勤カレンダーは続けて何回も押されるので、押し終わってから少し待って、まとめて1回で保存する
+const attPending = {};
+let attTimer = null, attInFlight = false;
+function attWaiting(){ return Object.keys(attPending).length + (attInFlight ? 1 : 0); }
 function cycleAtt(e, d){
+  if (!canAtt(e)) { toast('出勤を変えられるのは、本人と管理者だけです'); return; }
   const k = e + '|' + d, cur = data.attendance[k] || '', nx = cur === '' ? 'in' : (cur === 'in' ? 'off' : '');
   if (nx) data.attendance[k] = nx; else delete data.attendance[k];
+  attPending[k] = { empId: e, date: d, status: nx, prev: attPending[k] ? attPending[k].prev : cur };
   render();
-  // 同じマスを続けて押したときも、押した順に保存する
-  attQueue[k] = (attQueue[k] || Promise.resolve()).then(() => api('setAttendance', { empId: e, date: d, status: nx })).catch(err => {
-    if (cur) data.attendance[k] = cur; else delete data.attendance[k];
-    render(); handleError(err);
-  });
+  clearTimeout(attTimer);
+  attTimer = setTimeout(flushAtt, 1200);
 }
+async function flushAtt(){
+  clearTimeout(attTimer);
+  if (attInFlight) { attTimer = setTimeout(flushAtt, 600); return; }
+  const items = Object.keys(attPending).map(k => { const x = attPending[k]; delete attPending[k]; return x; });
+  if (!items.length) return;
+  attInFlight = true; updAttStatus();
+  try {
+    await api('setAttendanceMany', { items: items.map(x => ({ empId: x.empId, date: x.date, status: x.status })) });
+  } catch (err) {
+    // 保存できなかったマスは元に戻す（その後にまた押されたマスはそのまま）
+    items.forEach(x => { const k = x.empId + '|' + x.date; if (!attPending[k]) { if (x.prev) data.attendance[k] = x.prev; else delete data.attendance[k]; } });
+    render(); handleError(err);
+  } finally {
+    attInFlight = false;
+    if (Object.keys(attPending).length) attTimer = setTimeout(flushAtt, 600);
+    updAttStatus();
+  }
+}
+// 「保存待ち」「保存中」の小さな表示だけを書き換える
+function updAttStatus(){
+  const el = document.getElementById('att-status'); if (!el) return;
+  const n = Object.keys(attPending).length;
+  el.textContent = attInFlight ? '保存中…' : (n ? '保存待ち ' + n + '件' : '');
+  el.className = 'att-status' + ((attInFlight || n) ? ' on' : '');
+}
+// 画面を閉じる・別のアプリに切り替えるときは、待たずにすぐ保存する
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && Object.keys(attPending).length) flushAtt(); });
+window.addEventListener('pagehide', () => { if (Object.keys(attPending).length) flushAtt(); });
 
 /* ===== システム管理の操作 ===== */
 async function addWorkType(){

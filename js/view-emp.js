@@ -125,15 +125,15 @@ function taskRow(t,depth,eid,flat,nk){
   const soon = !od && !dn && t.due && t.due<=addDays(today,2);
   const par = flat && t.parent && taskById(t.parent) ? `<span class="muted">${esc(taskById(t.parent).title)} の子</span>` : '';
   return `<div class="trow ${dn?'is-done':''} ${depth?'sub':''}" style="--d:${depth}">
-    <button class="tchk ${dn?'on':''}" data-act="task-toggle" data-id="${t.id}" aria-label="${dn?'完了を取り消す':'完了にする'}">${dn?(prefs.theme==='ura'?ICON.circ:ICON.check):''}</button>
+    ${canEdit(t)?`<button class="tchk ${dn?'on':''}" data-act="task-toggle" data-id="${t.id}" aria-label="${dn?'完了を取り消す':'完了にする'}">${dn?(prefs.theme==='ura'?ICON.circ:ICON.check):''}</button>`:`<span class="tchk ro ${dn?'on':''}" title="他の人のタスクです">${dn?(prefs.theme==='ura'?ICON.circ:ICON.check):''}</span>`}
     <div class="tbody" data-act="task-open" data-id="${t.id}">
       <div class="ttl"><i class="pri pri-${PRI_CLS[t.priority]}" title="優先度 ${t.priority}"></i><span class="tt">${esc(t.title)}</span>${t.owner!==eid?'<span class="tag tag-co">共同</span>':''}${t.rec?`<span class="tag tag-rec">${ICON.rec}${recLabel(t.rec)}</span>`:''}</div>
       <div class="tmeta"><span class="st st-${ST_CLS[st]}">${st}</span>${t.due?`<span class="due ${od?'od':soon?'soon':''}">${od?'期限超過':'期限'} ${fmtMD(t.due)}</span>`:''}<span>比重 ${t.weight}</span>${t.owner!==eid?`<span>主担当 ${esc(empName(t.owner))}</span>`:''}${nk?`<span>子タスク ${nk}件から計算</span>`:''}${par}</div>
-      ${nk ? `<div class="tprog"><div class="pbar"><i style="width:${p}%"></i></div><span>${Math.round(p)}%</span></div>`
+      ${(nk || !canEdit(t)) ? `<div class="tprog"><div class="pbar"><i style="width:${p}%"></i></div><span>${Math.round(p)}%</span></div>`
            : `<div class="tprog"><div class="pslide" data-act="noop"><div class="pbar"><i style="width:${p}%"></i></div><button class="pthumb" role="slider" data-id="${t.id}" style="left:${p}%" aria-label="「${esc(t.title)}」の進捗" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(p)}"></button></div><span class="pval">${Math.round(p)}%</span></div>`}
     </div>
     <div class="tact">
-      ${!dn?`<button class="ib" data-act="task-pause" data-id="${t.id}" title="${t.status==='一時停止'?'再開する':'一時停止する'}" aria-label="${t.status==='一時停止'?'再開する':'一時停止する'}">${t.status==='一時停止'?ICON.play:ICON.pause}</button>`:''}
+      ${!dn&&canEdit(t)?`<button class="ib" data-act="task-pause" data-id="${t.id}" title="${t.status==='一時停止'?'再開する':'一時停止する'}" aria-label="${t.status==='一時停止'?'再開する':'一時停止する'}">${t.status==='一時停止'?ICON.play:ICON.pause}</button>`:''}
       ${nk&&!flat?`<button class="ib" data-act="task-expand" data-id="${t.id}" aria-label="${ui.expanded[t.id]?'子タスクを閉じる':'子タスクを開く'}" aria-expanded="${!!ui.expanded[t.id]}">${ui.expanded[t.id]?ICON.chevDs:ICON.chevRs}</button>`:''}
     </div></div>`;
 }

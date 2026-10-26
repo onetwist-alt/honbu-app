@@ -1,5 +1,5 @@
 /**
- * 本部アプリ（本番）GAS  v1.3.1
+ * 本部アプリ（本番）GAS  v1.4.2
  *
  * スプレッドシート「業務管理データ」に紐づけて使います。
  * はじめて貼り付けたとき・新しい版に貼り替えたときは、setup を1回実行してください。
@@ -8,7 +8,7 @@
  * ・足りない列は右に足すだけで、既存のデータは消しません。
  * ・削除は「削除」の印をつけるだけで、行は消しません（ログインの記録だけは片付けます）。
  */
-const APP_VERSION = '1.3.1';
+const APP_VERSION = '1.4.2';
 const TZ = 'Asia/Tokyo';
 const SESSION_DAYS = 30;     // ログインしたままにする日数
 const HASH_ROUNDS = 300;     // パスワードを変換する回数
@@ -41,7 +41,7 @@ const SCHEMA = {
     ['progress', '進捗', 'n'], ['status', '状態', 's'], ['start', '開始日', 'd'], ['due', '期限', 'd'],
     ['recType', '定期の種類', 's', REC], ['recDow', '定期の曜日', 's'], ['recDom', '定期の日', 's'],
     ['recOrigin', '定期の元タスクID', 's'], ['memo', 'メモ', 's'], ['prevProgress', '前の進捗', 's'],
-    ['doneAt', '完了日時', 't'], ['deleted', '削除', 'b'], ['deletedAt', '削除日時', 't'],
+    ['doneAt', '完了日時', 't'], ['deleted', '削除', 'b'], ['deletedAt', '削除日時', 't'], ['createdBy', '作成者', 's'],
     ['createdAt', '作成日時', 't'], ['updatedAt', '更新日時', 't'], ['version', '版', 'n']] },
   reports: { sheet: '日報', cols: [
     ['id', '日報ID', 's'], ['empId', '社員ID', 's'], ['date', '日付', 'd'], ['status', '状態', 's', REPORT_ST],
@@ -85,6 +85,7 @@ const HANDLERS = {
   loadRange:      { fn: hLoadRange_ },
   saveReport:     { write: true, fn: hSaveReport_ },
   setAttendance:  { write: true, fn: hSetAttendance_ },
+  setAttendanceMany: { write: true, fn: hSetAttendanceMany_ },
   saveTasks:      { write: true, fn: hSaveTasks_ },
   deleteTasks:    { write: true, fn: hDeleteTasks_ },
   restoreTasks:   { write: true, fn: hRestoreTasks_ },
@@ -346,6 +347,8 @@ function hSetAttendance_(p, user) {
   const empId = String(p.empId || ''), date = String(p.date || '');
   const st = (p.status === 'in' || p.status === 'off') ? p.status : '';
   if (!isDate_(date) || !T_('employees').find(empId)) throw appErr_('bad', '社員か日付が正しくありません');
+  // 出勤を変えられるのは、本人と管理者だけ
+  if (empId !== user.id && !user.admin) throw appErr_('forbidden', '出勤を変えられるのは、本人と管理者だけです');
   const key = empId + '|' + date;
   const A = T_('attendance');
   const now = nowStr_();
@@ -355,6 +358,34 @@ function hSetAttendance_(p, user) {
   else A.insert({ id: key, empId: empId, date: date, status: st, updatedAt: now, version: 1 });
   audit_(user, '出勤を変更', empName_(empId) + ' ' + date, ATT_ST[before] || '未登録', ATT_ST[st] || '未登録', 'アプリ');
   return { key: key, status: st };
+}
+
+// 出勤をまとめて変える（出勤カレンダーで続けて押したとき、1回の通信で保存する）
+function hSetAttendanceMany_(p, user) {
+  const list = (Array.isArray(p.items) ? p.items : []).slice(0, 400);
+  if (!list.length) return { count: 0 };
+  const E = T_('employees'), A = T_('attendance');
+  const now = nowStr_();
+  const clean = list.map(function (x) {
+    const empId = String(x.empId || ''), date = String(x.date || '');
+    const st = (x.status === 'in' || x.status === 'off') ? x.status : '';
+    if (!isDate_(date) || !E.find(empId)) throw appErr_('bad', '社員か日付が正しくありません');
+    if (empId !== user.id && !user.admin) throw appErr_('forbidden', '出勤を変えられるのは、本人と管理者だけです');
+    return { key: empId + '|' + date, empId: empId, date: date, status: st };
+  });
+  // 同じマスが2回入っていたら、最後のものだけを使う
+  const last = {};
+  clean.forEach(function (x) { last[x.key] = x; });
+  const adds = [], notes = [];
+  Object.keys(last).forEach(function (k) {
+    const x = last[k], a = A.find(k), before = a ? a.status : '';
+    if (a) { if (a.status !== x.status) A.update(a, { status: x.status, updatedAt: now, version: a.version + 1 }); else return; }
+    else { if (!x.status) return; adds.push({ id: k, empId: x.empId, date: x.date, status: x.status, updatedAt: now, version: 1 }); }
+    notes.push(empName_(x.empId) + ' ' + x.date.slice(5) + '：' + (ATT_ST[before] || '未登録') + '→' + (ATT_ST[x.status] || '未登録'));
+  });
+  A.insertMany(adds);
+  if (notes.length) audit_(user, '出勤を変更（' + notes.length + '件）', notes.slice(0, 20).join('、') + (notes.length > 20 ? ' ほか' : ''), '', '', 'アプリ');
+  return { count: notes.length };
 }
 
 /* ===== タスク ===== */
@@ -369,6 +400,15 @@ function hSaveTasks_(p, user) {
     if (cur && x.version != null && Number(x.version) !== cur.version) conflicts.push(taskPub_(cur));
   });
   if (conflicts.length) throw appErr_('conflict', 'ほかの人が先にタスクを更新しました。最新の内容に読み直しました', { tasks: conflicts });
+  // 他の人のタスクは、管理者・主担当・共同担当・作った人だけが直せる（新しく作って他の人に投げるのは誰でもできる）
+  list.forEach(function (x) {
+    const cur = Tt.find(String(x.id || ''));
+    if (cur && !canEditTask_(user, cur)) throw appErr_('forbidden', '「' + cur.title + '」は他の人のタスクなので、直せません');
+    if (!cur && x.parent) {
+      const par = Tt.find(String(x.parent));
+      if (par && !par.deleted && !canEditTask_(user, par)) throw appErr_('forbidden', '他の人のタスクの下には、子タスクを作れません');
+    }
+  });
   const now = nowStr_();
   const saved = [];
   list.forEach(function (x) {
@@ -391,7 +431,7 @@ function hSaveTasks_(p, user) {
       audit_(user, old.owner !== n.owner ? 'タスクを移動' : 'タスクを更新', n.title, taskSummary_(old), taskSummary_(n), 'アプリ');
       saved.push(taskPub_(n));
     } else {
-      const n = Tt.insert(Object.assign(v, { deleted: false, deletedAt: '', createdAt: now, version: 1 }));
+      const n = Tt.insert(Object.assign(v, { deleted: false, deletedAt: '', createdBy: user.id, createdAt: now, version: 1 }));
       audit_(user, 'タスクを追加', n.title, '', taskSummary_(n), 'アプリ');
       saved.push(taskPub_(n));
     }
@@ -424,9 +464,13 @@ function normTask_(x, E) {
   };
 }
 
+function canEditTask_(user, t) {
+  return !!user.admin || t.owner === user.id || String(t.co || '').split(',').indexOf(user.id) >= 0 || t.createdBy === user.id;
+}
 function hDeleteTasks_(p, user) {
   const ids = (Array.isArray(p.ids) ? p.ids : []).map(String);
   const Tt = T_('tasks');
+  ids.forEach(function (id) { const t = Tt.find(id); if (t && !canEditTask_(user, t)) throw appErr_('forbidden', '「' + t.title + '」は他の人のタスクなので、削除できません'); });
   const all = {};
   const add = function (id) {
     if (all[id]) return;
@@ -447,6 +491,7 @@ function hDeleteTasks_(p, user) {
 function hRestoreTasks_(p, user) {
   const ids = (Array.isArray(p.ids) ? p.ids : []).map(String);
   const Tt = T_('tasks');
+  ids.forEach(function (id) { const t = Tt.find(id); if (t && !canEditTask_(user, t)) throw appErr_('forbidden', '他の人のタスクは元に戻せません'); });
   const now = nowStr_();
   const out = [];
   ids.forEach(function (id) {
@@ -639,7 +684,7 @@ function makeRecurring_() {
     if (list.some(function (t) { return t.start === today || t.due === today; })) return;
     Tt.insert({ id: uid_('t'), parent: last.parent, title: last.title, detail: last.detail, owner: last.owner, co: last.co,
       priority: last.priority, weight: last.weight, progress: 0, status: '未着手', start: today, due: today,
-      recType: last.recType, recDow: last.recDow, recDom: last.recDom, recOrigin: g, memo: '', prevProgress: '',
+      recType: last.recType, recDow: last.recDow, recDom: last.recDom, recOrigin: g, memo: '', prevProgress: '', createdBy: last.createdBy || '',
       doneAt: '', deleted: false, deletedAt: '', createdAt: now, updatedAt: now, version: 1 });
     made++;
   });
@@ -880,7 +925,7 @@ function taskPub_(t) {
     progress: t.progress, status: t.status || '未着手', start: t.start, due: t.due,
     rec: t.recType ? { type: t.recType, dow: Number(t.recDow) || 0, dom: Number(t.recDom) || 1 } : null,
     recOrigin: t.recOrigin || '', memo: t.memo, prevProgress: t.prevProgress === '' ? null : Number(t.prevProgress),
-    doneAt: t.doneAt, deleted: !!t.deleted, version: t.version
+    doneAt: t.doneAt, deleted: !!t.deleted, createdBy: t.createdBy || '', version: t.version
   };
 }
 function reportPub_(r, items) {

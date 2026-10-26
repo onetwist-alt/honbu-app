@@ -21,7 +21,7 @@ if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navi
   const canRefresh = () => {
     const a = document.activeElement;
     const typing = a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName);
-    return session.token && ui.user && !ui.mustChange && !ui.booting && !ui.modal && !drag && !ds && !typing && !wcDirty() && busyN === 0;
+    return session.token && ui.user && !ui.mustChange && !ui.booting && !ui.modal && !drag && !ds && !typing && !wcDirty() && busyN === 0 && !attWaiting();
   };
   const min = Number((window.HONBU_CONFIG || {}).REFRESH_MINUTES) || 3;
   setInterval(() => { if (document.visibilityState === 'visible' && canRefresh()) refreshAll(true); }, min * 60000);

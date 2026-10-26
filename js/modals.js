@@ -7,6 +7,7 @@ function renderModal(){
   if(!ui.modal){ root.innerHTML=''; root.dataset.for=''; document.body.classList.remove('noscroll'); return; }
   if(ui.modal.type==='settings'){ root.dataset.for='settings'; root.innerHTML=settingsHtml(); document.body.classList.add('noscroll'); return; }
   if(ui.modal.type==='item'){ root.dataset.for='item'; root.innerHTML=itemHtml(); document.body.classList.add('noscroll'); return; }
+  if(ui.modal.type==='bulk'){ if(root.firstChild && root.dataset.for==='bulk') return; root.dataset.for='bulk'; root.innerHTML=bulkHtml(); document.body.classList.add('noscroll'); setTimeout(()=>{ const x=document.getElementById('bk-text'); if(x) x.focus(); },30); return; }
   if(ui.modal.type==='pw'||ui.modal.type==='temp'||ui.modal.type==='empEdit'){
     if(root.firstChild && root.dataset.for===ui.modal.type) return;
     root.dataset.for=ui.modal.type; root.innerHTML=ui.modal.type==='pw'?pwModalHtml():ui.modal.type==='temp'?tempHtml():empEditHtml(); document.body.classList.add('noscroll'); return;
@@ -44,7 +45,7 @@ function renderModal(){
         <div class="muted small" style="margin-top:4px;font-weight:400">決まった日の朝8時に、次の分を自動で作ります（試作では作られません）。</div></div>
       <label class="fl full">メモ<textarea class="inp" id="tf-memo" rows="2">${esc(v.memo)}</textarea></label>
     </div>
-    <div class="m-f">${t&&!ro?`<button class="btn btn-danger" data-act="tf-delete">削除</button><button class="btn" data-act="tf-child">${ICON.plus}子タスクを追加</button>`:''}<span class="sp"></span>${ro?'<button class="btn btn-primary" data-act="modal-close">閉じる</button>':'<button class="btn" data-act="modal-close">キャンセル</button><button class="btn btn-primary" data-act="tf-save">保存</button>'}</div>
+    <div class="m-f">${t&&!ro?`<button class="btn btn-danger" data-act="tf-delete">削除</button><button class="btn" data-act="tf-child">${ICON.plus}子タスクを追加</button><button class="btn" data-act="tf-bulk">${ICON.plus}まとめて追加</button>`:''}<span class="sp"></span>${ro?'<button class="btn btn-primary" data-act="modal-close">閉じる</button>':'<button class="btn" data-act="modal-close">キャンセル</button><button class="btn btn-primary" data-act="tf-save">保存</button>'}</div>
   </div></div>`;
   if(ro) root.querySelectorAll('.m-b input, .m-b select, .m-b textarea, .m-b .seg button').forEach(el=>{ el.disabled=true; });
   document.body.classList.add('noscroll');

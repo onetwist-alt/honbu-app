@@ -834,3 +834,24 @@ table.mt{width:100%;border-collapse:collapse;font-size:calc(13px * var(--fs))}
 .att tr.mine .sticky{box-shadow:inset 3px 0 0 var(--accent)}
 .att-status{font-size:calc(12px * var(--fs));color:var(--muted);margin-left:auto}
 .att-status.on{color:var(--accent);font-weight:700}
+
+/* ===== まとめて作る・子タスクの札 ===== */
+.bk-pats{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 8px;font-weight:400}
+.bk-text{font-family:ui-monospace,Consolas,"BIZ UDGothic",monospace;line-height:1.7;min-height:180px;white-space:pre}
+.bk-prev{max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:10px 12px;font-size:calc(13px * var(--fs));line-height:1.7;background:var(--surface-2)}
+.bk-count{font-weight:700;color:var(--accent);margin-bottom:6px}
+.bk-count.over{color:var(--bad)}
+.tchips{padding:6px 12px 12px calc(14px + var(--d,0)*22px);border-bottom:1px solid var(--line)}
+.tchips-h{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;font-size:calc(12px * var(--fs));font-weight:700;color:var(--text-2);margin-bottom:6px}
+.tchips-h span{font-weight:400;color:var(--muted);font-size:calc(11px * var(--fs))}
+.tchips-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(58px,1fr));gap:4px}
+.tchip{position:relative;overflow:hidden;border:1px solid var(--line);background:var(--surface);border-radius:4px;padding:6px 3px;font-size:calc(11.5px * var(--fs));color:var(--text);text-align:center;min-width:0}
+.tchip span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tchip i{position:absolute;left:0;bottom:0;height:3px;background:var(--accent)}
+.tchip.done{background:var(--good-soft);color:var(--good);border-color:transparent;font-weight:700}
+.tchip.od{background:var(--bad-soft);color:var(--bad);border-color:transparent;font-weight:700}
+.tchip.cur{border-color:var(--accent);color:var(--accent);font-weight:700}
+.tchip.fut{background:var(--surface-2);color:var(--muted)}
+[data-theme="ura"] .tchip{border-radius:3px}
+[data-theme="ura"] .tchip.done{background:#e8f0fe;color:#065fd4}
+[data-theme="ura"] .tchip.od{background:#fde8e8;color:#cc0000}

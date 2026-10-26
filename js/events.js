@@ -67,6 +67,10 @@ const ACT={
   'tf-pri'(el){ ui.modal.pri=el.dataset.v; document.querySelectorAll('#tf-pri button').forEach(b=>b.classList.toggle('on',b===el)); },
   'tf-save'(){ saveTaskForm(); },
   'tf-delete'(){ deleteTaskForm(); },
+  'bulk-new'(){ ui.modal={type:'bulk',owner:ui.empId||ui.user}; renderModal(); },
+  'tf-bulk'(){ const t=taskById(ui.modal.id); ui.modal={type:'bulk',parent:t.id,owner:t.owner}; renderModal(); },
+  'bk-ins'(el){ const x=document.getElementById('bk-text'); if(!x) return; const s=x.selectionStart||0, line=x.value.slice(0,s).split('\n').pop(); const ind=(line.match(/^[ \t　]*/)||[''])[0]; const atStart=!line.trim(); x.setRangeText((atStart?'':'\n'+ind)+el.dataset.t, s, x.selectionEnd||s, 'end'); x.focus(); updBulkPreview(); },
+  'bk-save'(){ saveBulk(); },
   'tf-child'(){ const t=taskById(ui.modal.id); ui.modal=null; openTask(null,{owner:t.owner,parent:t.id}); },
   'att-step'(el){ ui.attMonth=addMonths(ui.attMonth,+el.dataset.n); ui.attScrolled=false; render(); ensureMonths([ui.attMonth]); },
   'att-cycle'(el){ cycleAtt(el.dataset.e,el.dataset.d); }
@@ -87,6 +91,7 @@ document.addEventListener('input',ev=>{
   if(f==='search'){ ui.search=t.value; refreshTasks(); }
   else if(f==='entry-name'){ ui.entry.name=t.value; const s=document.getElementById('sugg'); if(s) s.innerHTML=suggHtml(); }
   else if(f==='entry-memo'){ ui.entry.memo=t.value; }
+  else if(f==='bk-text'){ updBulkPreview(); }
   else if(f==='it-name' && ui.modal && ui.modal.draft){ ui.modal.draft.name=t.value; const s=document.getElementById('it-sugg'); if(s) s.innerHTML=suggList(ui.modal.draft.kind,t.value,'it-sugg','保存'); }
   else if(f==='it-memo' && ui.modal && ui.modal.draft){ ui.modal.draft.memo=t.value; }
 });
@@ -95,10 +100,12 @@ document.addEventListener('change',ev=>{
   if(f==='entry-task'){ ui.entry.taskId=t.value; }
   else if(f==='it-task' && ui.modal && ui.modal.draft){ ui.modal.draft.taskId=t.value; }
   else if(f==='dash-date'){ if(t.value){ ui.dashDate=t.value; render(); } }
+  else if(t.id==='bk-owner'||t.id==='bk-start'||t.id==='bk-month'){ updBulkPreview(); }
   else if(t.id==='tf-rec-on'){ document.getElementById('tf-rec').hidden=!t.checked; }
   else if(t.id==='tf-rec-type'){ document.getElementById('tf-rec-dow').hidden=t.value!=='weekly'; document.getElementById('tf-rec-dom').hidden=t.value!=='monthly'; }
 });
 document.addEventListener('keydown',ev=>{
+  if(ev.key==='Tab' && ev.target.id==='bk-text'){ ev.preventDefault(); const x=ev.target, s=x.selectionStart; if(ev.shiftKey){ const ls=x.value.lastIndexOf('\n',s-1)+1; if(x.value.slice(ls,ls+2)==='  '){ x.setRangeText('',ls,ls+2,'preserve'); } } else x.setRangeText('  ',s,x.selectionEnd,'end'); updBulkPreview(); return; }
   if(ev.key==='Escape' && ui.modal){ closeModal(); return; }
   if(ev.key==='Enter'){
     const id=ev.target.id;

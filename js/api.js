@@ -13,7 +13,7 @@ function appError(code, msg, data){ const e = new Error(msg); e.code = code; e.d
 async function api(action, payload){
   const url = String((window.HONBU_CONFIG || {}).GAS_URL || '').trim();
   if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(url)) throw appError('config', 'GASのURLが設定されていません。js/config.js を確認してください');
-  const body = JSON.stringify({ action, payload: payload || {}, token: session.token || '', requestId: uid() });
+  const body = JSON.stringify({ action, payload: payload || {}, token: session.token || '', requestId: uid(), app: APP_VERSION });
   setBusy(1);
   try {
     for (let attempt = 0; ; attempt++) {
@@ -105,6 +105,16 @@ function handleError(err){
   const code = err && err.code;
   if (code === 'auth') { clearLogin(); render(); toast(err.message); return; }
   if (code === 'must_change') { ui.mustChange = true; ui.modal = null; render(); return; }
+  if (code === 'old_app') {
+    // 古い画面のまま使われていたら、新しい画面に読み込み直す（読み込み直しが続かないよう1分に1回まで）
+    let last = 0; try { last = Number(sessionStorage.getItem('honbu-reload') || 0); } catch (e) {}
+    if (Date.now() - last > 60000) {
+      try { sessionStorage.setItem('honbu-reload', String(Date.now())); } catch (e) {}
+      toast('新しい版があります。画面を読み込み直します');
+      setTimeout(() => location.reload(), 1200);
+    } else toast('新しい版を受け取れませんでした。少し待ってから、画面を読み込み直してください');
+    return;
+  }
   if (code === 'conflict' && err.data) {
     if (err.data.tasks) mergeTasks(err.data.tasks);
     if (err.data.report) { data.reports[err.data.report.key] = err.data.report; ui.wc = null; }

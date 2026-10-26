@@ -102,7 +102,7 @@ function reportCard(eid,d){
   return `<div class="card"><div class="card-h"><h3>${fmtMD(d)} の日報</h3>${stChip}${dirty?'<span class="chip warn">保存していない変更</span>':''}<span style="margin-left:auto">${attChip(a)}</span></div>${form}${list}${sum}${foot}</div>`;
 }
 function tasksCard(eid){
-  return `<div class="card"><div class="card-h"><h3>タスク</h3><span style="flex:1"></span><button class="btn btn-primary btn-sm" data-act="task-new">${ICON.plus}タスクを追加</button></div>
+  return `<div class="card"><div class="card-h"><h3>タスク</h3><span style="flex:1"></span><button class="btn btn-sm" data-act="bulk-new">${ICON.plus}まとめて作る</button><button class="btn btn-primary btn-sm" data-act="task-new">${ICON.plus}タスクを追加</button></div>
     <div class="tools"><input type="search" class="inp" id="task-search" placeholder="タスクを探す" value="${esc(ui.search)}" data-field="search" aria-label="タスクを探す">
       <div class="seg seg-sm">${[['open','未完了'],['all','すべて'],['done','完了']].map(([k,l])=>`<button class="${ui.filter===k?'on':''}" data-act="filter" data-f="${k}">${l}</button>`).join('')}</div></div>
     <div id="tasklist">${taskListHtml(eid)}</div></div>`;
@@ -116,7 +116,7 @@ function taskListHtml(eid){
   }
   const roots=vis.filter(t=>!t.parent || !ids.has(t.parent)).filter(passF).sort(cmpTask);
   if(!roots.length) return `<div class="empty">${ui.filter==='done'?'完了したタスクはありません':'タスクはありません。「タスクを追加」から登録できます'}</div>`;
-  const tree = (t,depth) => { const kids=kidsOf(t.id).filter(k=>ids.has(k.id)).sort(cmpTask); let h=taskRow(t,depth,eid,false,kids.length); if(kids.length && ui.expanded[t.id]) h+=kids.map(k=>tree(k,depth+1)).join(''); return h; };
+  const tree = (t,depth) => { const kids=kidsOf(t.id).filter(k=>ids.has(k.id)).sort(cmpTask); let h=taskRow(t,depth,eid,false,kids.length); if(kids.length && ui.expanded[t.id]) h+= (kids.length>=7 && kids.every(k=>!kidsOf(k.id).length)) ? chipsHtml(kids,depth+1) : kids.map(k=>tree(k,depth+1)).join(''); return h; };
   return roots.map(t=>tree(t,0)).join('');
 }
 function taskRow(t,depth,eid,flat,nk){
@@ -136,4 +136,15 @@ function taskRow(t,depth,eid,flat,nk){
       ${!dn&&canEdit(t)?`<button class="ib" data-act="task-pause" data-id="${t.id}" title="${t.status==='一時停止'?'再開する':'一時停止する'}" aria-label="${t.status==='一時停止'?'再開する':'一時停止する'}">${t.status==='一時停止'?ICON.play:ICON.pause}</button>`:''}
       ${nk&&!flat?`<button class="ib" data-act="task-expand" data-id="${t.id}" aria-label="${ui.expanded[t.id]?'子タスクを閉じる':'子タスクを開く'}" aria-expanded="${!!ui.expanded[t.id]}">${ui.expanded[t.id]?ICON.chevDs:ICON.chevRs}</button>`:''}
     </div></div>`;
+}
+
+// 子タスクが多いときの札の並び（月の順・番号の順）
+function chipsHtml(kids, depth){
+  const today = bizToday(), ym = ymOf(today);
+  const list = kids.slice().sort((a, b) => (a.due && b.due && a.due !== b.due) ? (a.due < b.due ? -1 : 1) : a.title.localeCompare(b.title, 'ja', { numeric: true }));
+  const nDone = list.filter(done).length;
+  return `<div class="tchips" style="--d:${depth}"><div class="tchips-h">${nDone} / ${list.length} 完了<span>緑：完了　青枠：今月　赤：期限超過　灰色：まだ先</span></div><div class="tchips-g">${list.map(t => {
+    const p = prog(t), dn = p >= 100, od = overdue(t), cur = !dn && !od && t.due && ymOf(t.due) === ym, fut = !dn && !od && !cur && t.due && t.due > today;
+    return `<button class="tchip ${dn ? 'done' : od ? 'od' : cur ? 'cur' : fut ? 'fut' : ''}" data-act="task-open" data-id="${t.id}" title="${esc(t.title)}・${Math.round(p)}%${t.due ? '・期限 ' + fmtMD(t.due) : ''}"><span>${esc(t.title)}</span>${!dn && p > 0 ? `<i style="width:${p}%"></i>` : ''}</button>`;
+  }).join('')}</div></div>`;
 }

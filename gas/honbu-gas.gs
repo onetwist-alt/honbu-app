@@ -1,5 +1,5 @@
 /**
- * 本部アプリ（本番）GAS  v1.4.2
+ * 本部アプリ（本番）GAS  v1.5.1
  *
  * スプレッドシート「業務管理データ」に紐づけて使います。
  * はじめて貼り付けたとき・新しい版に貼り替えたときは、setup を1回実行してください。
@@ -8,7 +8,9 @@
  * ・足りない列は右に足すだけで、既存のデータは消しません。
  * ・削除は「削除」の印をつけるだけで、行は消しません（ログインの記録だけは片付けます）。
  */
-const APP_VERSION = '1.4.2';
+const APP_VERSION = '1.5.1';
+// これより古いアプリの画面からの操作は受け付けない（古い画面のまま使われるのを防ぐ）
+const MIN_APP_VERSION = '1.4.1';
 const TZ = 'Asia/Tokyo';
 const SESSION_DAYS = 30;     // ログインしたままにする日数
 const HASH_ROUNDS = 300;     // パスワードを変換する回数
@@ -106,6 +108,9 @@ function doPost(e) {
   try { req = JSON.parse((e && e.postData && e.postData.contents) || '{}'); }
   catch (err) { return json_({ ok: false, code: 'bad_request', error: '送られた内容を読めませんでした' }); }
   const action = String(req.action || '');
+  if (action !== 'ping' && cmpVer_(String(req.app || '0'), MIN_APP_VERSION) < 0) {
+    return json_({ ok: false, code: 'old_app', error: 'アプリが古い版のままです。画面を読み込み直してください' });
+  }
   const h = HANDLERS[action];
   if (!h) return json_({ ok: false, code: 'unknown', error: '知らない操作です' });
   try {
@@ -390,7 +395,7 @@ function hSetAttendanceMany_(p, user) {
 
 /* ===== タスク ===== */
 function hSaveTasks_(p, user) {
-  const list = Array.isArray(p.tasks) ? p.tasks.slice(0, 100) : [];
+  const list = Array.isArray(p.tasks) ? p.tasks.slice(0, 300) : [];
   if (!list.length) throw appErr_('bad', '保存するタスクがありません');
   const Tt = T_('tasks'), E = T_('employees');
   // 先に全部の版を確かめる（1件でも食い違えば何も保存しない）
@@ -410,17 +415,19 @@ function hSaveTasks_(p, user) {
     }
   });
   const now = nowStr_();
-  const saved = [];
+  const saved = [], adds = [], fresh = {};
+  const findAny = function (id) { return Tt.find(id) || fresh[id] || null; };
+  const many = list.length > 5;
   list.forEach(function (x) {
     const v = normTask_(x, E);
     if (!v.id) v.id = uid_('t');
-    // 親タスクの確認（自分自身や子孫を親にできない）
+    // 親タスクの確認（自分自身や子孫を親にできない）。同じ回に作る新しいタスクも親にできる
     if (v.parent) {
-      let cur = Tt.find(v.parent), guard = 0;
+      let cur = findAny(v.parent), guard = 0;
       if (!cur || cur.deleted) v.parent = '';
       while (cur && guard++ < 50) {
         if (cur.id === v.id) throw appErr_('bad', '親タスクの指定が正しくありません（自分の子を親にはできません）');
-        cur = cur.parent ? Tt.find(cur.parent) : null;
+        cur = cur.parent ? findAny(cur.parent) : null;
       }
     }
     const old = Tt.find(v.id);
@@ -428,14 +435,21 @@ function hSaveTasks_(p, user) {
     v.updatedAt = now;
     if (old) {
       const n = Tt.update(old, Object.assign(v, { version: old.version + 1 }));
-      audit_(user, old.owner !== n.owner ? 'タスクを移動' : 'タスクを更新', n.title, taskSummary_(old), taskSummary_(n), 'アプリ');
+      if (!many) audit_(user, old.owner !== n.owner ? 'タスクを移動' : 'タスクを更新', n.title, taskSummary_(old), taskSummary_(n), 'アプリ');
       saved.push(taskPub_(n));
     } else {
-      const n = Tt.insert(Object.assign(v, { deleted: false, deletedAt: '', createdBy: user.id, createdAt: now, version: 1 }));
-      audit_(user, 'タスクを追加', n.title, '', taskSummary_(n), 'アプリ');
-      saved.push(taskPub_(n));
+      const row = Object.assign(v, { deleted: false, deletedAt: '', createdBy: user.id, createdAt: now, version: 1 });
+      adds.push(row);
+      fresh[row.id] = row;
     }
   });
+  // 新しいタスクは、まとめて1回で書き込む（まとめて作るときに速くするため）
+  Tt.insertMany(adds).forEach(function (n) {
+    if (!many) audit_(user, 'タスクを追加', n.title, '', taskSummary_(n), 'アプリ');
+    saved.push(taskPub_(n));
+  });
+  if (many) audit_(user, adds.length ? 'タスクをまとめて追加（' + adds.length + '件）' : 'タスクをまとめて更新（' + list.length + '件）',
+    list.slice(0, 10).map(function (x) { return x.title; }).join('、') + (list.length > 10 ? ' ほか' : ''), '', '', 'アプリ');
   return { tasks: saved };
 }
 
@@ -976,6 +990,11 @@ function appErr_(code, message, data) { const e = new Error(message); e.appCode 
 function nowStr_() { return Utilities.formatDate(new Date(), TZ, 'yyyy/MM/dd HH:mm:ss'); }
 function bizToday_() { return Utilities.formatDate(new Date(Date.now() - DAY_START_HOUR * 3600 * 1000), TZ, 'yyyy-MM-dd'); }
 function isDate_(s) { return typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s); }
+function cmpVer_(a, b) {
+  const x = String(a).split('.'), y = String(b).split('.');
+  for (let i = 0; i < 3; i++) { const d = (Number(x[i]) || 0) - (Number(y[i]) || 0); if (d) return d; }
+  return 0;
+}
 function pad2_(n) { return ('0' + n).slice(-2); }
 function uid_(prefix) { return prefix + Date.now().toString(36) + Utilities.getUuid().replace(/-/g, '').slice(0, 6); }
 function empName_(id) { const e = T_('employees').find(id); return e ? e.name : (id || ''); }

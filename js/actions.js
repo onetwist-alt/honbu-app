@@ -93,7 +93,10 @@ async function undoLast(){
   const snap = undoSnap; undoSnap = null;
   const t = document.getElementById('toast'); t.className = '';
   try {
-    if (snap.restore) {
+    if (snap.remove) {
+      const r = await api('deleteTasks', { ids: snap.remove });
+      data.tasks = data.tasks.filter(x => r.deleted.indexOf(x.id) < 0); invalidate();
+    } else if (snap.restore) {
       const r = await api('restoreTasks', { ids: snap.restore });
       mergeTasks(r.tasks);
     } else {
@@ -265,4 +268,110 @@ async function closeMonth(){
     toast(fmtYM(ym) + (r.closed ? 'を確定し直しました' : 'を締めました'));
   } catch (err) { handleError(err); }
   finally { ui.repBusy = false; render(); }
+}
+
+/* ===== まとめて作る ===== */
+// 1行に1タスク。字下げした行は、上の行の子タスクになる。「1月〜12月」「第1〜4週」「月〜金」「1〜10」は1件ずつに広げる
+const RANGE = '[〜~～\\-－]';
+function parseOutline(text){
+  const root = { children: [] }, stack = [{ w: -1, node: root }];
+  String(text || '').replace(/\r/g, '').split('\n').forEach(raw => {
+    if (!raw.trim()) return;
+    let w = 0, i = 0;
+    for (; i < raw.length; i++) { const c = raw[i]; if (c === ' ') w += 1; else if (c === '\t' || c === '　') w += 2; else break; }
+    const name = raw.slice(i).trim().slice(0, 100);
+    if (!name) return;
+    while (stack.length > 1 && stack[stack.length - 1].w >= w) stack.pop();
+    const node = { name, children: [] };
+    stack[stack.length - 1].node.children.push(node);
+    stack.push({ w, node });
+  });
+  return root.children;
+}
+function expandName(name){
+  let m = name.match(new RegExp('(\\d{1,2})月\\s*' + RANGE + '\\s*(\\d{1,2})月'));
+  if (m) {
+    const a = +m[1], b = +m[2];
+    if (a >= 1 && a <= 12 && b >= 1 && b <= 12) {
+      const out = []; let x = a;
+      for (let k = 0; k < 12; k++) { out.push({ name: name.replace(m[0], x + '月'), month: x, first: a }); if (x === b) break; x = x % 12 + 1; }
+      return out;
+    }
+  }
+  m = name.match(new RegExp('第\\s*(\\d{1,2})\\s*' + RANGE + '\\s*(\\d{1,2})\\s*週'));
+  if (m && +m[2] >= +m[1] && +m[2] - +m[1] < 10) { const out = []; for (let i = +m[1]; i <= +m[2]; i++) out.push({ name: name.replace(m[0], '第' + i + '週') }); return out; }
+  m = name.match(new RegExp('([月火水木金土日])(?:曜日?)?\\s*' + RANGE + '\\s*([月火水木金土日])(?:曜日?)?'));
+  if (m) {
+    const D = '月火水木金土日', i = D.indexOf(m[1]), j = D.indexOf(m[2]);
+    if (j > i) { const out = []; for (let k = i; k <= j; k++) out.push({ name: name.replace(m[0], D[k] + '曜') }); return out; }
+  }
+  m = name.match(new RegExp('(\\d{1,3})\\s*' + RANGE + '\\s*(\\d{1,3})'));
+  if (m && +m[2] > +m[1] && +m[2] - +m[1] < 100) { const out = []; for (let i = +m[1]; i <= +m[2]; i++) out.push({ name: name.replace(m[0], String(i)) }); return out; }
+  return [{ name }];
+}
+function buildBulk(nodes, o){
+  const out = [], y0 = +o.start.slice(0, 4);
+  const walk = (list, parentId) => list.forEach(n => expandName(n.name).forEach(x => {
+    const t = { id: uid(), parent: parentId || null, title: x.name, detail: '', owner: o.owner, co: [], priority: '中', weight: 1,
+      progress: 0, status: '未着手', start: o.start, due: '', rec: null, recOrigin: '', memo: '', prevProgress: null };
+    if (x.month && o.useMonth) {
+      const y = x.month < x.first ? y0 + 1 : y0, ym = y + '-' + pad(x.month);
+      t.start = ym + '-01'; t.due = ym + '-' + pad(dim(ym));
+    }
+    out.push(t);
+    walk(n.children, t.id);
+  }));
+  walk(nodes, o.parent);
+  return out;
+}
+function bulkHtml(){
+  const m = ui.modal, par = m.parent ? taskById(m.parent) : null, today = bizToday();
+  const owner = m.owner || (par ? par.owner : (ui.empId || ui.user));
+  const pats = [['1月〜12月', '1月〜12月'], ['4月〜3月（年度）', '4月〜3月'], ['第1〜4週', '第1〜4週'], ['月〜金', '月〜金'], ['1〜10', '1〜10']];
+  return modalFrame('bk-head', par ? '「' + esc(par.title) + '」の下にまとめて作る' : 'タスクをまとめて作る', `<div style="display:grid;gap:12px">
+    <div class="adm-form" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr))">
+      <label class="fl">担当（主担当）<select class="inp" id="bk-owner">${staff().map(e => `<option value="${e.id}" ${e.id === owner ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select></label>
+      <label class="fl">開始日<input type="date" class="inp" id="bk-start" value="${today}"></label>
+    </div>
+    <div class="fl">タスク（1行に1つ。字下げした行は、上の行の子タスクになります）
+      <div class="bk-pats">${pats.map(p => `<button type="button" class="qt" data-act="bk-ins" data-t="${p[1]}">${p[0]}</button>`).join('')}</div>
+      <textarea class="inp bk-text" id="bk-text" rows="9" data-field="bk-text" placeholder="会計&#10;  仕分け&#10;    1月〜12月&#10;  入力&#10;    1月〜12月" spellcheck="false"></textarea></div>
+    <label class="check"><input type="checkbox" id="bk-month" checked> 「1月」などの月のタスクは、その月の1日を開始日、月末を期限にする</label>
+    <div class="bk-prev" id="bk-prev">${bulkPreview()}</div>
+  </div>`, `<button class="btn" data-act="modal-close">キャンセル</button><button class="btn btn-primary" data-act="bk-save" id="bk-save">作る</button>`, 560);
+}
+function bulkOpts(){
+  const g = id => document.getElementById(id);
+  return { owner: g('bk-owner') ? g('bk-owner').value : ui.user, start: (g('bk-start') && g('bk-start').value) || bizToday(),
+    useMonth: g('bk-month') ? g('bk-month').checked : true, parent: ui.modal && ui.modal.parent || null };
+}
+function bulkPreview(){
+  const el = document.getElementById('bk-text');
+  const nodes = parseOutline(el ? el.value : '');
+  if (!nodes.length) return '<span class="muted small">入力すると、ここに作るタスクの一覧が出ます</span>';
+  const list = buildBulk(nodes, bulkOpts());
+  const depth = {}; list.forEach(t => { depth[t.id] = t.parent && depth[t.parent] != null ? depth[t.parent] + 1 : 0; });
+  const rows = list.slice(0, 60).map(t => `<div style="padding-left:${depth[t.id] * 16}px">${depth[t.id] ? '└ ' : ''}${esc(t.title)}${t.due ? ` <span class="muted small">期限 ${fmtMD(t.due)}</span>` : ''}</div>`).join('');
+  const b = document.getElementById('bk-save'); if (b) b.textContent = list.length + '件を作る';
+  return `<div class="bk-count ${list.length > 300 ? 'over' : ''}">${list.length}件のタスクを作ります${list.length > 300 ? '（1回に作れるのは300件までです）' : ''}</div>${rows}${list.length > 60 ? `<div class="muted small">ほか ${list.length - 60}件</div>` : ''}`;
+}
+function updBulkPreview(){ const p = document.getElementById('bk-prev'); if (p) p.innerHTML = bulkPreview(); }
+async function saveBulk(){
+  const nodes = parseOutline(document.getElementById('bk-text').value);
+  if (!nodes.length) { toast('タスクを1行以上入れてください'); return; }
+  const list = buildBulk(nodes, bulkOpts());
+  if (list.length > 300) { toast('1回に作れるのは300件までです。分けて作ってください'); return; }
+  const b = document.getElementById('bk-save'); if (b) { b.disabled = true; b.textContent = '作っています…'; }
+  try {
+    const r = await api('saveTasks', { tasks: list.map(wire) });
+    mergeTasks(r.tasks);
+    const roots = list.filter(t => !t.parent || t.parent === bulkOpts().parent).map(t => t.id);
+    list.forEach(t => { if (list.some(c => c.parent === t.id)) ui.expanded[t.id] = true; });
+    if (ui.modal && ui.modal.parent) ui.expanded[ui.modal.parent] = true;
+    closeModal(); render();
+    toastUndo(list.length + '件のタスクを作りました', { remove: roots });
+  } catch (err) {
+    if (b) { b.disabled = false; b.textContent = list.length + '件を作る'; }
+    handleError(err);
+  }
 }

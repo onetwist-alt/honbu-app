@@ -855,3 +855,4 @@ table.mt{width:100%;border-collapse:collapse;font-size:calc(13px * var(--fs))}
 [data-theme="ura"] .tchip{border-radius:3px}
 [data-theme="ura"] .tchip.done{background:#e8f0fe;color:#065fd4}
 [data-theme="ura"] .tchip.od{background:#fde8e8;color:#cc0000}
+.rec-due-l{align-self:center;font-size:calc(12px * var(--fs));color:var(--text-2);font-weight:700;margin-left:4px}

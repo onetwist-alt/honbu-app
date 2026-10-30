@@ -41,8 +41,12 @@ function renderModal(){
           <select class="inp" id="tf-rec-type" aria-label="繰り返し"><option value="daily" ${rec.type==='daily'?'selected':''}>毎日</option><option value="weekly" ${rec.type==='weekly'?'selected':''}>毎週</option><option value="monthly" ${rec.type==='monthly'?'selected':''}>毎月</option></select>
           <select class="inp" id="tf-rec-dow" aria-label="曜日" ${rec.type==='weekly'?'':'hidden'}>${DOW.map((w,i)=>`<option value="${i}" ${+rec.dow===i?'selected':''}>${w}曜日</option>`).join('')}</select>
           <select class="inp" id="tf-rec-dom" aria-label="日付" ${rec.type==='monthly'?'':'hidden'}>${Array.from({length:31},(_,i)=>`<option value="${i+1}" ${+rec.dom===i+1?'selected':''}>${i+1}日</option>`).join('')}</select>
+          <span class="rec-due-l">期限</span>
+          <select class="inp" id="tf-rec-due-d" aria-label="期限" ${rec.type==='daily'?'':'hidden'}>${[0,1,2,3,4,5,6].map(n=>`<option value="${n}" ${(+rec.due||0)===n?'selected':''}>${n===0?'当日':n===1?'翌日まで':n+'日後まで'}</option>`).join('')}</select>
+          <select class="inp" id="tf-rec-due-w" aria-label="期限の曜日" ${rec.type==='weekly'?'':'hidden'}><option value="">同じ曜日</option>${DOW.map((w,i)=>`<option value="${i}" ${rec.due!=null&&rec.due!==''&&+rec.due===i&&rec.type==='weekly'?'selected':''}>${w}曜日まで</option>`).join('')}</select>
+          <select class="inp" id="tf-rec-due-m" aria-label="期限の日" ${rec.type==='monthly'?'':'hidden'}><option value="">同じ日</option>${Array.from({length:31},(_,i)=>`<option value="${i+1}" ${rec.due!=null&&rec.due!==''&&+rec.due===i+1&&rec.type==='monthly'?'selected':''}>${i+1}日まで</option>`).join('')}</select>
         </div>
-        <div class="muted small" style="margin-top:4px;font-weight:400">決まった日の朝8時に、次の分を自動で作ります（試作では作られません）。</div></div>
+        <div class="muted small" style="margin-top:4px;font-weight:400">決まった日の朝8時に、次の分を自動で作ります。期限を選ぶと、毎回その日までの期限が入ります（例：毎月1日に作って5日まで、月曜に作って木曜まで）。</div></div>
       <label class="fl full">メモ<textarea class="inp" id="tf-memo" rows="2">${esc(v.memo)}</textarea></label>
     </div>
     <div class="m-f">${t&&!ro?`<button class="btn btn-danger" data-act="tf-delete">削除</button><button class="btn" data-act="tf-child">${ICON.plus}子タスクを追加</button><button class="btn" data-act="tf-bulk">${ICON.plus}まとめて追加</button>`:''}<span class="sp"></span>${ro?'<button class="btn btn-primary" data-act="modal-close">閉じる</button>':'<button class="btn" data-act="modal-close">キャンセル</button><button class="btn btn-primary" data-act="tf-save">保存</button>'}</div>

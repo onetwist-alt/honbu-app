@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '1.4.1';
+const APP_VERSION = '1.5.0';
 /* ===== 定数 ===== */
 let DAY_MIN = 660;              // 1日の勤務時間（分）。設定タブの値で上書きする
 let MONTHLY_COST = 300000;      // 月の人件費。設定タブの値で上書きする
@@ -153,7 +153,13 @@ function cmpTask(a,b){
   const p=PRI_ORDER[a.priority]-PRI_ORDER[b.priority]; if(p) return p;
   const x=a.due||'9999', y=b.due||'9999'; return x<y?-1:x>y?1:0;
 }
-function recLabel(r){ if(!r) return ''; if(r.type==='daily') return '毎日'; if(r.type==='weekly') return '毎週'+DOW[r.dow]; return '毎月'+r.dom+'日'; }
+function recLabel(r){
+  if(!r) return '';
+  const has = r.due!=null && r.due!=='';
+  if(r.type==='daily') return '毎日'+(has&&+r.due>0?'（'+r.due+'日後まで）':'');
+  if(r.type==='weekly') return '毎週'+DOW[r.dow]+(has&&+r.due!==+r.dow?'→'+DOW[r.due]:'');
+  return '毎月'+r.dom+'日'+(has&&+r.due!==+r.dom?'→'+r.due+'日':'');
+}
 
 function monthStats(eid,m){
   const n=dim(m), today=bizToday(); let days=0, basicMin=0, plusMin=0; const byWork={}, byTask={};

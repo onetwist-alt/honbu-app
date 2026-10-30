@@ -1,5 +1,5 @@
 /**
- * 本部アプリ（本番）GAS  v1.5.1
+ * 本部アプリ（本番）GAS  v1.6.0
  *
  * スプレッドシート「業務管理データ」に紐づけて使います。
  * はじめて貼り付けたとき・新しい版に貼り替えたときは、setup を1回実行してください。
@@ -8,9 +8,9 @@
  * ・足りない列は右に足すだけで、既存のデータは消しません。
  * ・削除は「削除」の印をつけるだけで、行は消しません（ログインの記録だけは片付けます）。
  */
-const APP_VERSION = '1.5.1';
+const APP_VERSION = '1.6.0';
 // これより古いアプリの画面からの操作は受け付けない（古い画面のまま使われるのを防ぐ）
-const MIN_APP_VERSION = '1.4.1';
+const MIN_APP_VERSION = '1.5.0';
 const TZ = 'Asia/Tokyo';
 const SESSION_DAYS = 30;     // ログインしたままにする日数
 const HASH_ROUNDS = 300;     // パスワードを変換する回数
@@ -41,7 +41,7 @@ const SCHEMA = {
     ['id', 'タスクID', 's'], ['parent', '親タスクID', 's'], ['title', 'タスク名', 's'], ['detail', '詳細説明', 's'],
     ['owner', '主担当', 's'], ['co', '共同担当', 's'], ['priority', '優先度', 's'], ['weight', '比重', 'n'],
     ['progress', '進捗', 'n'], ['status', '状態', 's'], ['start', '開始日', 'd'], ['due', '期限', 'd'],
-    ['recType', '定期の種類', 's', REC], ['recDow', '定期の曜日', 's'], ['recDom', '定期の日', 's'],
+    ['recType', '定期の種類', 's', REC], ['recDow', '定期の曜日', 's'], ['recDom', '定期の日', 's'], ['recDue', '定期の期限', 's'],
     ['recOrigin', '定期の元タスクID', 's'], ['memo', 'メモ', 's'], ['prevProgress', '前の進捗', 's'],
     ['doneAt', '完了日時', 't'], ['deleted', '削除', 'b'], ['deletedAt', '削除日時', 't'], ['createdBy', '作成者', 's'],
     ['createdAt', '作成日時', 't'], ['updatedAt', '更新日時', 't'], ['version', '版', 'n']] },
@@ -473,6 +473,11 @@ function normTask_(x, E) {
     recType: rec ? rec.type : '',
     recDow: rec && rec.type === 'weekly' ? String(Math.min(6, Math.max(0, Number(rec.dow) || 0))) : '',
     recDom: rec && rec.type === 'monthly' ? String(Math.min(31, Math.max(1, Number(rec.dom) || 1))) : '',
+    // 期限：毎日＝何日後か（0〜30）、毎週＝期限の曜日（0〜6）、毎月＝期限の日（1〜31）。空なら作った日が期限
+    recDue: !rec || rec.due == null || rec.due === '' ? '' :
+      rec.type === 'daily' ? String(Math.min(30, Math.max(0, Math.round(Number(rec.due) || 0)))) :
+      rec.type === 'weekly' ? String(Math.min(6, Math.max(0, Math.round(Number(rec.due) || 0)))) :
+      String(Math.min(31, Math.max(1, Math.round(Number(rec.due) || 1)))),
     recOrigin: String(x.recOrigin || ''), memo: String(x.memo || '').slice(0, 2000),
     prevProgress: x.prevProgress == null || x.prevProgress === '' ? '' : String(Number(x.prevProgress) || 0)
   };
@@ -695,15 +700,30 @@ function makeRecurring_() {
       (last.recType === 'weekly' && Number(last.recDow) === dow) ||
       (last.recType === 'monthly' && (want === dom || (want > lastDay && dom === lastDay)));
     if (!hit) return;
-    if (list.some(function (t) { return t.start === today || t.due === today; })) return;
+    // 今日の分がもうあれば作らない（最初に手で作ったタスクは期限が今日でも作らない）
+    if (list.some(function (t) { return t.start === today || (t.id === g && t.due === today); })) return;
     Tt.insert({ id: uid_('t'), parent: last.parent, title: last.title, detail: last.detail, owner: last.owner, co: last.co,
-      priority: last.priority, weight: last.weight, progress: 0, status: '未着手', start: today, due: today,
-      recType: last.recType, recDow: last.recDow, recDom: last.recDom, recOrigin: g, memo: '', prevProgress: '', createdBy: last.createdBy || '',
+      priority: last.priority, weight: last.weight, progress: 0, status: '未着手', start: today, due: recDueDate_(last, today),
+      recType: last.recType, recDow: last.recDow, recDom: last.recDom, recDue: last.recDue, recOrigin: g, memo: '', prevProgress: '', createdBy: last.createdBy || '',
       doneAt: '', deleted: false, deletedAt: '', createdAt: now, updatedAt: now, version: 1 });
     made++;
   });
   if (made) audit_({ name: '自動処理' }, '定期タスクを作成', made + '件', '', '', '自動');
   return made;
+}
+
+// 定期タスクの期限の日付（作る日から見て）
+function recDueDate_(t, today) {
+  if (t.recDue === '' || t.recDue == null) return today;
+  const y = Number(today.slice(0, 4)), m = Number(today.slice(5, 7)), d = Number(today.slice(8, 10));
+  const fmt = function (dt) { return dt.getFullYear() + '-' + pad2_(dt.getMonth() + 1) + '-' + pad2_(dt.getDate()); };
+  const v = Number(t.recDue);
+  if (t.recType === 'daily') return fmt(new Date(y, m - 1, d + v));
+  if (t.recType === 'weekly') { const dow = new Date(y, m - 1, d).getDay(); return fmt(new Date(y, m - 1, d + ((v - dow + 7) % 7))); }
+  // 毎月：期限の日が作る日より前なら翌月。その月にない日は月末にする
+  const nm = v >= d ? m - 1 : m;
+  const last = new Date(y, nm + 1, 0).getDate();
+  return fmt(new Date(y, nm, Math.min(v, last)));
 }
 
 /* ===== スプレッドシートを直接さわったとき ===== */
@@ -937,7 +957,7 @@ function taskPub_(t) {
     id: t.id, parent: t.parent || null, title: t.title, detail: t.detail, owner: t.owner,
     co: t.co ? t.co.split(',').filter(String) : [], priority: t.priority || '中', weight: t.weight || 1,
     progress: t.progress, status: t.status || '未着手', start: t.start, due: t.due,
-    rec: t.recType ? { type: t.recType, dow: Number(t.recDow) || 0, dom: Number(t.recDom) || 1 } : null,
+    rec: t.recType ? { type: t.recType, dow: Number(t.recDow) || 0, dom: Number(t.recDom) || 1, due: t.recDue === '' ? null : Number(t.recDue) } : null,
     recOrigin: t.recOrigin || '', memo: t.memo, prevProgress: t.prevProgress === '' ? null : Number(t.prevProgress),
     doneAt: t.doneAt, deleted: !!t.deleted, createdBy: t.createdBy || '', version: t.version
   };
@@ -1035,10 +1055,20 @@ function refreshViews() {
     for (const k in TBL_) delete TBL_[k];
     buildOverview_();
     buildEmpTabs_();
+  } catch (err) {
+    // 作り直せなかったときは、全体把握画面の3行目に理由を出す（黙って止まらないように）
+    showViewError_(err);
+    throw err;
   } finally {
     SpreadsheetApp.flush();
     lock.releaseLock();
   }
+}
+function showViewError_(err) {
+  try {
+    const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(VIEW_SHEET);
+    if (sh) sh.getRange(3, 1).setValue('表を更新できませんでした（' + nowStr_().slice(5, 16) + '）：' + (err && err.message || err)).setFontColor(C_.red);
+  } catch (e) { /* 何もしない */ }
 }
 
 // 全体把握画面のマスを押したとき
@@ -1067,7 +1097,7 @@ function onSelectionChange(e) {
     if (!lock.tryLock(15000)) return;
     try {
       const now = viewState_(sh);
-      if (!(r === 1 && c === 8) && now.ym === ym) return;
+      if (!(r === 1 && c === 8) && now.ym === ym) { try { sh.setActiveSelection('A3'); } catch (x) { /* 何もしない */ } return; }
       sh.getRange(3, 1).setValue('読み込み中…（数秒かかります）');
       SpreadsheetApp.flush();
       for (const k in TBL_) delete TBL_[k];
@@ -1075,8 +1105,11 @@ function onSelectionChange(e) {
     } finally {
       lock.releaseLock();
     }
+    // 選んでいるマスをボタンから外す（同じボタンを続けて押しても反応するように）
+    try { sh.setActiveSelection('A3'); } catch (x) { /* 外せなくても動きには関係ない */ }
   } catch (err) {
     console.error(err);
+    showViewError_(err);
   }
 }
 

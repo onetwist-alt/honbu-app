@@ -102,7 +102,7 @@ document.addEventListener('change',ev=>{
   else if(f==='dash-date'){ if(t.value){ ui.dashDate=t.value; render(); } }
   else if(t.id==='bk-owner'||t.id==='bk-start'||t.id==='bk-month'){ updBulkPreview(); }
   else if(t.id==='tf-rec-on'){ document.getElementById('tf-rec').hidden=!t.checked; }
-  else if(t.id==='tf-rec-type'){ document.getElementById('tf-rec-dow').hidden=t.value!=='weekly'; document.getElementById('tf-rec-dom').hidden=t.value!=='monthly'; }
+  else if(t.id==='tf-rec-type'){ const g=id=>document.getElementById(id); g('tf-rec-dow').hidden=t.value!=='weekly'; g('tf-rec-dom').hidden=t.value!=='monthly'; g('tf-rec-due-d').hidden=t.value!=='daily'; g('tf-rec-due-w').hidden=t.value!=='weekly'; g('tf-rec-due-m').hidden=t.value!=='monthly'; }
 });
 document.addEventListener('keydown',ev=>{
   if(ev.key==='Tab' && ev.target.id==='bk-text'){ ev.preventDefault(); const x=ev.target, s=x.selectionStart; if(ev.shiftKey){ const ls=x.value.lastIndexOf('\n',s-1)+1; if(x.value.slice(ls,ls+2)==='  '){ x.setRangeText('',ls,ls+2,'preserve'); } } else x.setRangeText('  ',s,x.selectionEnd,'end'); updBulkPreview(); return; }

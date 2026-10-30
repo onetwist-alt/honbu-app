@@ -122,7 +122,12 @@ async function saveTaskForm(){
     start: g('tf-start').value, due: g('tf-due').value, parent: g('tf-parent').value || null,
     memo: g('tf-memo').value.trim()
   };
-  if (g('tf-rec-on').checked) { const ty = g('tf-rec-type').value; f.rec = ty === 'weekly' ? { type: ty, dow: +g('tf-rec-dow').value } : ty === 'monthly' ? { type: ty, dom: +g('tf-rec-dom').value } : { type: ty }; }
+  if (g('tf-rec-on').checked) {
+    const ty = g('tf-rec-type').value;
+    const dv = ty === 'daily' ? g('tf-rec-due-d').value : ty === 'weekly' ? g('tf-rec-due-w').value : g('tf-rec-due-m').value;
+    const due = dv === '' || (ty === 'daily' && dv === '0') ? null : +dv;
+    f.rec = ty === 'weekly' ? { type: ty, dow: +g('tf-rec-dow').value, due } : ty === 'monthly' ? { type: ty, dom: +g('tf-rec-dom').value, due } : { type: ty, due };
+  }
   else f.rec = null;
   const pr = g('tf-prog');
   if (pr && +pr.value >= 100 && prevStatus !== '完了' && f.status !== '完了' && !confirm('進捗を100%にすると完了になります。完了にしてよいですか？')) return;

@@ -40,7 +40,7 @@ function calCard(eid){
     for(let i=0;i<7;i++){
       const d=addDays(ws,i), r=rep(eid,d), due=open.filter(t=>t.due===d);
       const cls=['cc', d===ui.selDate?'sel':'', d===today?'today':'', i===0?'sun':'', i===6?'sat':'', holName(d)?'hol':''].join(' ');
-      cells+=`<button class="${cls}" data-act="sel-date" data-d="${d}"><span class="dn">${parseYmd(d).getDate()}日（${DOW[i]}）</span><span class="cm">${ura?'':attMark(att(eid,d))}${repDot(eid,d)}${ura?tkPill(d):''}${r&&r.items.length?`<span class="muted">＋α ${fmtH(calc(r.items).plus)}</span>`:''}</span>${due.length?`<ul>${due.slice(0,3).map(t=>`<li>期限：${esc(t.title)}</li>`).join('')}${due.length>3?`<li class="muted">ほか${due.length-3}件</li>`:''}</ul>`:''}</button>`;
+      cells+=`<button class="${cls}" data-act="sel-date" data-d="${d}"><span class="dn">${parseYmd(d).getDate()}日（${DOW[i]}）</span><span class="cm">${ura?'':attMark(att(eid,d))}${repDot(eid,d)}${ura?tkPill(d):''}${r&&r.items.length&&calc(r.items).extra?`<span class="muted">${calc(r.items).plus?'＋α '+fmtH(calc(r.items).plus):''}${calc(r.items).plus&&calc(r.items).recruit?' ':''}${calc(r.items).recruit?'採用 '+fmtH(calc(r.items).recruit):''}</span>`:''}</span>${due.length?`<ul>${due.slice(0,3).map(t=>`<li>期限：${esc(t.title)}</li>`).join('')}${due.length>3?`<li class="muted">ほか${due.length-3}件</li>`:''}</ul>`:''}</button>`;
     }
     grid=`<div class="week">${cells}</div>`;
   }
@@ -72,11 +72,11 @@ function reportCard(eid,d){
   if(editable){
     const k=ui.entry.kind, myTasks=visibleTasks(eid).filter(t=>!done(t)).sort(cmpTask);
     form=`<div class="rep-form">
-      <div class="seg" style="align-self:flex-start" role="group" aria-label="業務の区分"><button class="${k==='basic'?'on':''}" data-act="entry-kind" data-k="basic">基本業務</button><button class="${k==='plus'?'on':''}" data-act="entry-kind" data-k="plus">＋α業務</button></div>
+      <div class="seg" style="align-self:flex-start" role="group" aria-label="業務の区分"><button class="${k==='basic'?'on':''}" data-act="entry-kind" data-k="basic">基本業務</button><button class="${k==='plus'?'on':''}" data-act="entry-kind" data-k="plus">＋α業務</button><button class="${k==='recruit'?'on':''}" data-act="entry-kind" data-k="recruit">採用業務</button></div>
       <label class="fl">業務名<input class="inp" id="en-name" data-field="entry-name" value="${esc(ui.entry.name)}" placeholder="候補から選ぶか、入力する" autocomplete="off"></label>
       <div class="sugg" id="sugg">${suggHtml()}</div>
       <label class="fl">詳細メモ（任意）<input class="inp" id="en-memo" data-field="entry-memo" value="${esc(ui.entry.memo)}" placeholder="例：田中さん 10月分" autocomplete="off"></label>
-      ${k==='plus'?`<label class="fl">紐づけるタスク（任意）<select class="inp" data-field="entry-task"><option value="">なし</option>${myTasks.map(t=>`<option value="${t.id}" ${ui.entry.taskId===t.id?'selected':''}>${esc(t.title)}</option>`).join('')}</select></label>`:''}
+      ${true?`<label class="fl">紐づけるタスク（任意）<select class="inp" data-field="entry-task"><option value="">なし</option>${myTasks.map(t=>`<option value="${t.id}" ${ui.entry.taskId===t.id?'selected':''}>${esc(t.title)}</option>`).join('')}</select></label>`:''}
       <div class="time-row"><span class="fl">所要時間</span><div class="stepper"><button data-act="min-step" data-n="-30" aria-label="30分へらす">−</button><output>${fmtH(ui.entry.min)}</output><button data-act="min-step" data-n="30" aria-label="30分ふやす">＋</button></div>
         ${[60,120,180,240].map(m=>`<button class="qt ${ui.entry.min===m?'on':''}" data-act="min-set" data-m="${m}">${fmtH(m)}</button>`).join('')}</div>
       <button class="btn btn-primary btn-block" data-act="entry-add">${ICON.plus}業務を追加</button></div>`;
@@ -86,7 +86,7 @@ function reportCard(eid,d){
     form=`<div class="banner info" style="margin:12px 16px 4px">${ICON.info}<div>まだ来ていない日なので、日報は入力できません。</div></div>`;
   }
   const list = items.length
-    ? `<ul class="rep-items">${items.map((x,i)=>{ const tk=x.taskId?taskById(x.taskId):null; return `<li><span class="k ${x.kind}">${x.kind==='plus'?'＋α':'基本'}</span><div style="flex:1;min-width:0${editable?';cursor:pointer':''}" ${editable?`data-act="item-edit" data-i="${i}"`:''}><div style="font-weight:700">${esc(x.name)}</div>${x.memo||tk?`<div class="muted small">${esc(x.memo)}${tk?` <span class="tag">${ICON.link}${esc(tk.title)}</span>`:''}</div>`:''}</div><span class="h">${fmtH(x.min)}</span>${editable?`<button class="ib" data-act="item-edit" data-i="${i}" aria-label="${esc(x.name)}を直す">${ICON.edit}</button><button class="ib" data-act="item-del" data-i="${i}" aria-label="${esc(x.name)}を消す">${ICON.x}</button>`:''}</li>`; }).join('')}</ul>`
+    ? `<ul class="rep-items">${items.map((x,i)=>{ const tk=x.taskId?taskById(x.taskId):null; return `<li><span class="k ${x.kind}">${KSHORT[x.kind]||'基本'}</span><div style="flex:1;min-width:0${editable?';cursor:pointer':''}" ${editable?`data-act="item-edit" data-i="${i}"`:''}><div style="font-weight:700">${esc(x.name)}</div>${x.memo||tk?`<div class="muted small">${esc(x.memo)}${tk?` <span class="tag">${ICON.link}${esc(tk.title)}</span>`:''}</div>`:''}</div><span class="h">${fmtH(x.min)}</span>${editable?`<button class="ib" data-act="item-edit" data-i="${i}" aria-label="${esc(x.name)}を直す">${ICON.edit}</button><button class="ib" data-act="item-del" data-i="${i}" aria-label="${esc(x.name)}を消す">${ICON.x}</button>`:''}</li>`; }).join('')}</ul>`
     : `<div class="empty">まだ業務がありません。${editable?'上で業務を選んで追加してください。':''}</div>`;
   const sum = `<div class="rep-sum">${day11(items)}${c.over?`<div class="banner warn">${ICON.warn}<div>入力の合計が <b>${fmtH(c.total)}</b> で、11時間を超えています。保存はできます。人件費はこの日を11時間分に縮めて計算します。</div></div>`:''}</div>`;
   let foot='';

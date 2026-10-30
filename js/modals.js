@@ -59,11 +59,11 @@ function itemHtml(){
   return `<div class="mb" data-act="modal-bg"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="it-title" style="max-width:480px">
     <div class="m-h"><h3 id="it-title">業務を直す</h3><button class="ib" data-act="modal-close" aria-label="閉じる">${ICON.x}</button></div>
     <div class="m-b single"><div class="rep-form" style="background:none;border:0;padding:0">
-      <div class="seg" style="align-self:flex-start" role="group" aria-label="業務の区分"><button class="${x.kind==='basic'?'on':''}" data-act="it-kind" data-k="basic">基本業務</button><button class="${x.kind==='plus'?'on':''}" data-act="it-kind" data-k="plus">＋α業務</button></div>
+      <div class="seg" style="align-self:flex-start" role="group" aria-label="業務の区分"><button class="${x.kind==='basic'?'on':''}" data-act="it-kind" data-k="basic">基本業務</button><button class="${x.kind==='plus'?'on':''}" data-act="it-kind" data-k="plus">＋α業務</button><button class="${x.kind==='recruit'?'on':''}" data-act="it-kind" data-k="recruit">採用業務</button></div>
       <label class="fl">業務名<input class="inp" id="it-name" data-field="it-name" value="${esc(x.name)}" autocomplete="off"></label>
       <div class="sugg" id="it-sugg">${suggList(x.kind,x.name,'it-sugg','保存')}</div>
       <label class="fl">詳細メモ（任意）<input class="inp" id="it-memo" data-field="it-memo" value="${esc(x.memo)}" placeholder="例：田中さん 10月分" autocomplete="off"></label>
-      ${x.kind==='plus'?`<label class="fl">紐づけるタスク（任意）<select class="inp" data-field="it-task"><option value="">なし</option>${myTasks.map(t=>`<option value="${t.id}" ${x.taskId===t.id?'selected':''}>${esc(t.title)}</option>`).join('')}</select></label>`:''}
+      ${true?`<label class="fl">紐づけるタスク（任意）<select class="inp" data-field="it-task"><option value="">なし</option>${myTasks.map(t=>`<option value="${t.id}" ${x.taskId===t.id?'selected':''}>${esc(t.title)}</option>`).join('')}</select></label>`:''}
       <div class="time-row"><span class="fl">所要時間</span><div class="stepper"><button data-act="it-min-step" data-n="-30" aria-label="30分へらす">−</button><output>${fmtH(x.min)}</output><button data-act="it-min-step" data-n="30" aria-label="30分ふやす">＋</button></div>${[60,120,180,240].map(v=>`<button class="qt ${x.min===v?'on':''}" data-act="it-min-set" data-m="${v}">${fmtH(v)}</button>`).join('')}</div>
     </div></div>
     <div class="m-f"><button class="btn btn-danger" data-act="it-del">この業務を消す</button><span class="sp"></span><button class="btn" data-act="modal-close">キャンセル</button><button class="btn btn-primary" data-act="it-save">直す</button></div>
@@ -80,7 +80,7 @@ function settingsHtml(){
         ${prefs.theme==='system'?`<p style="margin:8px 0 0">いまの端末の設定：${mq.matches?'ダーク':'ライト'}</p>`:''}</div>
       <div class="set-sec"><h4>文字の大きさ</h4><p>3段階から選べます。この端末だけに反映されます。</p>
         ${seg([['s','小'],['m','標準'],['l','大']],prefs.fs,'set-fs','文字の大きさ')}
-        <div class="fs-prev">見本：基本業務 データ取り 2h、＋α業務 会計 3h</div></div>
+        <div class="fs-prev">見本：基本業務 データ取り 2h、＋α業務 会計 3h、採用業務 面接 1h</div></div>
       <div class="set-sec"><h4>ホーム画面に追加</h4>${installHtml()}</div>
       <div class="set-sec"><h4>ログイン</h4>${u
         ? `<div class="acct"><span class="avatar">${esc(u.name.slice(0,1))}</span><div style="min-width:0"><div style="font-weight:700">${esc(u.name)} ${u.admin?'<span class="chip acc">管理者</span>':''}</div><div class="muted small">ID：${esc(u.loginId)}・30日間ログインしたままになります</div></div></div><button class="btn btn-block" data-act="logout">${ICON.out}ログアウト</button>`

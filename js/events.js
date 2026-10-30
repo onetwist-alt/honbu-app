@@ -52,7 +52,7 @@ const ACT={
   'it-sugg'(el){ const x=ui.modal.draft; x.name=el.dataset.n; const i=document.getElementById('it-name'); if(i) i.value=x.name; document.getElementById('it-sugg').innerHTML=suggList(x.kind,x.name,'it-sugg','保存'); },
   'it-min-step'(el){ const x=ui.modal.draft; x.min=Math.min(DAY_MIN,Math.max(30,x.min+(+el.dataset.n))); renderModal(); },
   'it-min-set'(el){ ui.modal.draft.min=+el.dataset.m; renderModal(); },
-  'it-save'(){ const x=ui.modal.draft; x.name=(x.name||'').trim(); x.memo=(x.memo||'').trim(); if(!x.name){ toast('業務名を選ぶか、入力してください'); return; } if(x.kind!=='plus') x.taskId=''; const wc=wcFor(ui.empId,ui.selDate); wc.items[ui.modal.i]=x; closeModal(); render(); toast('直しました。最後に「下書き保存」か「変更を提出」を押してください'); },
+  'it-save'(){ const x=ui.modal.draft; x.name=(x.name||'').trim(); x.memo=(x.memo||'').trim(); if(!x.name){ toast('業務名を選ぶか、入力してください'); return; } const wc=wcFor(ui.empId,ui.selDate); wc.items[ui.modal.i]=x; closeModal(); render(); toast('直しました。最後に「下書き保存」か「変更を提出」を押してください'); },
   'it-del'(){ const wc=wcFor(ui.empId,ui.selDate); wc.items.splice(ui.modal.i,1); closeModal(); render(); toast('消しました。最後に「下書き保存」か「変更を提出」を押してください'); },
   'rep-draft'(){ saveReport('draft'); },
   'rep-submit'(){ saveReport('submitted'); },

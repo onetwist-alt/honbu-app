@@ -11,7 +11,7 @@ function addEntry(){
   const wc = wcFor(ui.empId, ui.selDate);
   const name = (ui.entry.name || '').trim();
   if (!name) { toast('業務名を選ぶか、入力してください'); const i = document.getElementById('en-name'); if (i) i.focus(); return; }
-  wc.items.push({ id: uid(), kind: ui.entry.kind, name, memo: (ui.entry.memo || '').trim(), min: ui.entry.min, taskId: ui.entry.kind === 'plus' ? ui.entry.taskId : '' });
+  wc.items.push({ id: uid(), kind: ui.entry.kind, name, memo: (ui.entry.memo || '').trim(), min: ui.entry.min, taskId: ui.entry.taskId || '' });
   ui.entry.name = ''; ui.entry.memo = ''; ui.entry.taskId = '';
   renderEmpParts(false); toast('追加しました。最後に「下書き保存」か「日報を提出」を押してください');
 }

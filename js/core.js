@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 /* ===== 定数 ===== */
 let DAY_MIN = 660;              // 1日の勤務時間（分）。設定タブの値で上書きする
 let MONTHLY_COST = 300000;      // 月の人件費。設定タブの値で上書きする
@@ -104,14 +104,16 @@ const staff = () => data.employees.filter(e=>e.active).sort((a,b)=>a.order-b.ord
 const att = (e,d) => data.attendance[e+'|'+d] || '';
 const rep = (e,d) => data.reports[e+'|'+d] || null;
 const taskById = id => data.tasks.find(t=>t.id===id);
+// 業務の区分：基本業務・＋α業務・採用業務（＋αと採用は、11時間から引く）
+const KINDS = ['basic','plus','recruit'];
+const KSHORT = {basic:'基本', plus:'＋α', recruit:'採用'};
+const KFULL = {basic:'基本業務', plus:'＋α業務', recruit:'採用業務'};
 function calc(items){
-  let plus=0, basicIn=0;
-  items.forEach(i=>{ if(i.kind==='plus') plus+=i.min; else basicIn+=i.min; });
-  const total=plus+basicIn;
-  return {plus,basicIn,total,basic:Math.max(0,DAY_MIN-plus),other:Math.max(0,DAY_MIN-total),over:total>DAY_MIN};
+  let plus=0, recruit=0, basicIn=0;
+  items.forEach(i=>{ if(i.kind==='plus') plus+=i.min; else if(i.kind==='recruit') recruit+=i.min; else basicIn+=i.min; });
+  const extra=plus+recruit, total=extra+basicIn;
+  return {plus,recruit,extra,basicIn,total,basic:Math.max(0,DAY_MIN-extra),other:Math.max(0,DAY_MIN-total),over:total>DAY_MIN};
 }
-// 11時間を超えた日は割合で11時間分に縮める
-function scaled(c){ if(!c.over) return {plus:c.plus,basic:DAY_MIN-c.plus}; const p=c.plus*DAY_MIN/c.total; return {plus:p,basic:DAY_MIN-p}; }
 
 // タスクの親子関係と進捗は、画面を描くたびに1回だけ計算して使い回す（タスクが増えても重くならないように）
 let TM = null;
@@ -162,7 +164,7 @@ function recLabel(r){
 }
 
 function monthStats(eid,m){
-  const n=dim(m), today=bizToday(); let days=0, basicMin=0, plusMin=0; const byWork={}, byTask={};
+  const n=dim(m), today=bizToday(); let days=0, basicMin=0, plusMin=0, recruitMin=0; const byWork={}, byTask={};
   for(let i=1;i<=n;i++){
     const d=m+'-'+pad(i); if(d>today) break;
     if(att(eid,d)!=='in') continue;
@@ -171,9 +173,9 @@ function monthStats(eid,m){
     const c=calc(items); const f=c.over?DAY_MIN/c.total:1;
     items.forEach(x=>{ const k=x.kind+'|'+x.name; byWork[k]=(byWork[k]||0)+x.min*f; if(x.taskId) byTask[x.taskId]=(byTask[x.taskId]||0)+x.min*f; });
     if(c.other>0){ const k='basic|その他の基本業務'; byWork[k]=(byWork[k]||0)+c.other; }
-    plusMin+=c.plus*f; basicMin+=DAY_MIN-c.plus*f;
+    plusMin+=c.plus*f; recruitMin+=c.recruit*f; basicMin+=DAY_MIN-c.extra*f;
   }
-  return {days, rate: days?MONTHLY_COST/(days*DAY_MIN/60):0, basicMin, plusMin, byWork, byTask};
+  return {days, rate: days?MONTHLY_COST/(days*DAY_MIN/60):0, basicMin, plusMin, recruitMin, byWork, byTask};
 }
 
 /* ===== 祝日（日本） ===== */
@@ -200,8 +202,8 @@ function ring(pct,size,stroke){
 }
 function day11(items){
   const c=calc(items), tot=Math.max(DAY_MIN,c.total);
-  return `<div class="day11 ${c.over?'over':''}" title="1日11時間の内訳"><i class="s-basic" style="width:${c.basicIn/tot*100}%"></i><i class="s-other" style="width:${c.other/tot*100}%"></i><i class="s-plus" style="width:${c.plus/tot*100}%"></i></div>
-  <div class="d11-leg"><span><i class="sw" style="background:var(--basic)"></i>基本業務 <b>${fmtH(c.basic)}</b> <span class="muted">（入力 ${fmtH(c.basicIn)}・その他 ${fmtH(c.other)}）</span></span><span><i class="sw" style="background:var(--plus)"></i>＋α業務 <b>${fmtH(c.plus)}</b></span></div>`;
+  return `<div class="day11 ${c.over?'over':''}" title="1日11時間の内訳"><i class="s-basic" style="width:${c.basicIn/tot*100}%"></i><i class="s-other" style="width:${c.other/tot*100}%"></i><i class="s-plus" style="width:${c.plus/tot*100}%"></i><i class="s-recruit" style="width:${c.recruit/tot*100}%"></i></div>
+  <div class="d11-leg"><span><i class="sw" style="background:var(--basic)"></i>基本業務 <b>${fmtH(c.basic)}</b> <span class="muted">（入力 ${fmtH(c.basicIn)}・その他 ${fmtH(c.other)}）</span></span><span><i class="sw" style="background:var(--plus)"></i>＋α業務 <b>${fmtH(c.plus)}</b></span><span><i class="sw" style="background:var(--recruit)"></i>採用業務 <b>${fmtH(c.recruit)}</b></span></div>`;
 }
 // 追加テーマのときはチェックマークの代わりに〇を使う
 const CK = () => prefs.theme==='ura' ? '〇' : '✓';

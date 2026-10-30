@@ -20,7 +20,7 @@ function monthAgg(m){
 }
 const overdueList = () => live().filter(t=>overdue(t)&&!kidsOf(t.id).length).sort((a,b)=>a.due<b.due?-1:1);
 const importantList = () => live().filter(t=>t.priority==='高'&&!done(t)).sort(cmpTask);
-const workLabel = k => { const i=k.indexOf('|'); return {kind:k.slice(0,i)==='plus'?'＋α業務':'基本業務', name:k.slice(i+1)}; };
+const workLabel = k => { const i=k.indexOf('|'); return {kind:KFULL[k.slice(0,i)]||'基本業務', name:k.slice(i+1)}; };
 
 function dashCalendar(){
   const m=ui.dashMonth, n=dim(m), first=dowOf(m+'-01'), today=bizToday(), N=staff().length;
@@ -59,7 +59,7 @@ function dashCard(e,d){
   const showHours = a==='in' || items.length>0;
   const c=calc(items);
   const list = items.length
-    ? `<ul class="items">${items.map(x=>`<li><span class="k ${x.kind}">${x.kind==='plus'?'＋α':'基本'}</span><span class="nm">${esc(x.name)}${x.memo?` <span class="memo">${esc(x.memo)}</span>`:''}</span><span class="h">${fmtH(x.min)}</span></li>`).join('')}</ul>`
+    ? `<ul class="items">${items.map(x=>`<li><span class="k ${x.kind}">${KSHORT[x.kind]||'基本'}</span><span class="nm">${esc(x.name)}${x.memo?` <span class="memo">${esc(x.memo)}</span>`:''}</span><span class="h">${fmtH(x.min)}</span></li>`).join('')}</ul>`
     : (a==='in'?'<div class="items-empty">日報がまだありません。このままだと11時間すべてが「その他の基本業務」になります。</div>':'');
   return `<div class="card"><div class="ecard-h"><span class="avatar">${esc(e.name.slice(0,1))}</span>
     <div style="flex:1;min-width:0"><button class="nm" data-act="open-emp" data-e="${e.id}">${esc(e.name)}</button>${e.title?` <span class="muted small">${esc(e.title)}</span>`:''}<div class="muted small">${e.shift}</div></div></div>
@@ -79,11 +79,11 @@ function progressCard(){
 function monthCards(m){
   const ag=monthAgg(m);
   const prov = m===ymOf(bizToday()) ? '月の途中なので暫定の数字です' : '';
-  const empRows=ag.rows.map(({e,s,cost})=>`<tr><td>${esc(e.name)}</td><td class="num">${s.days}日</td><td class="num">${s.days?yen(s.rate):'—'}</td><td class="num">${yen(cost)}</td><td class="num">${fmtH(s.basicMin)}</td><td class="num">${fmtH(s.plusMin)}</td></tr>`).join('');
+  const empRows=ag.rows.map(({e,s,cost})=>`<tr><td>${esc(e.name)}</td><td class="num">${s.days}日</td><td class="num">${s.days?yen(s.rate):'—'}</td><td class="num">${yen(cost)}</td><td class="num">${fmtH(s.basicMin)}</td><td class="num">${fmtH(s.plusMin)}</td><td class="num">${fmtH(s.recruitMin)}</td></tr>`).join('');
   const workRows=ag.work.length?ag.work.map(([k,v])=>{ const w=workLabel(k); return `<tr><td>${esc(w.name)}</td><td>${w.kind}</td><td class="num">${fmtH(v.min)}</td><td class="num">${yen(v.cost)}</td></tr>`; }).join(''):'<tr><td colspan="4" class="muted">この月のデータはありません</td></tr>';
-  const taskRows=ag.task.length?ag.task.map(([id,v])=>{ const t=taskById(id); return `<tr><td>${esc(t?t.title:id)}</td><td class="num">${fmtH(v.min)}</td><td class="num">${yen(v.cost)}</td></tr>`; }).join(''):'<tr><td colspan="3" class="muted">タスクに紐づいた＋α業務はまだありません</td></tr>';
+  const taskRows=ag.task.length?ag.task.map(([id,v])=>{ const t=taskById(id); return `<tr><td>${esc(t?t.title:id)}</td><td class="num">${fmtH(v.min)}</td><td class="num">${yen(v.cost)}</td></tr>`; }).join(''):'<tr><td colspan="3" class="muted">タスクに紐づいた業務はまだありません</td></tr>';
   return `<div class="sec-h"><h2>${fmtYM(m)} のまとめ</h2><span class="muted small">${prov}</span><button class="btn btn-sm" data-act="open-report" data-ym="${m}" style="margin-left:auto">${ICON.chart}月次レポートを見る</button></div>
-  <div class="card"><div class="card-h"><h3>社員別</h3></div><div class="tw" data-drag-scroll><table class="mt"><thead><tr><th>社員</th><th class="num">出勤日数</th><th class="num">時給</th><th class="num">人件費</th><th class="num">基本業務</th><th class="num">＋α業務</th></tr></thead><tbody>${empRows}<tr class="total"><td>合計</td><td></td><td></td><td class="num">${yen(ag.total)}</td><td></td><td></td></tr></tbody></table></div></div>
+  <div class="card"><div class="card-h"><h3>社員別</h3></div><div class="tw" data-drag-scroll><table class="mt"><thead><tr><th>社員</th><th class="num">出勤日数</th><th class="num">時給</th><th class="num">人件費</th><th class="num">基本業務</th><th class="num">＋α業務</th><th class="num">採用業務</th></tr></thead><tbody>${empRows}<tr class="total"><td>合計</td><td></td><td></td><td class="num">${yen(ag.total)}</td><td></td><td></td><td></td></tr></tbody></table></div></div>
   <div class="two">
     <div class="card"><div class="card-h"><h3>業務別の人件費</h3></div><div class="tw" data-drag-scroll><table class="mt"><thead><tr><th>業務名</th><th>区分</th><th class="num">時間</th><th class="num">人件費</th></tr></thead><tbody>${workRows}</tbody></table></div></div>
     <div class="card"><div class="card-h"><h3>タスク別の累計人件費</h3></div><div class="tw" data-drag-scroll><table class="mt"><thead><tr><th>タスク</th><th class="num">時間</th><th class="num">人件費</th></tr></thead><tbody>${taskRows}</tbody></table></div></div>

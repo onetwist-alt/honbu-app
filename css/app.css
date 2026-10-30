@@ -6,7 +6,7 @@
   --text:#1a1f2e;--text-2:#475066;--muted:#858da0;
   --accent:#2f3f7a;--accent-hover:#26336a;--accent-soft:#e8ebf6;--on-accent:#ffffff;
   --basic:#2f3f7a;--basic-soft:#e8ebf6;
-  --plus:#a8650f;--plus-soft:#fbf0dd;
+  --plus:#a8650f;--plus-soft:#fbf0dd;--recruit:#0f7f80;--recruit-soft:#dff3f2;
   --good:#24724f;--good-soft:#e2f2e9;
   --warn:#c2410c;--warn-soft:#fdeee4;
   --bad:#b42318;--bad-soft:#fde8e6;
@@ -27,7 +27,7 @@
     --text:#e6e9f1;--text-2:#b3bacb;--muted:#7f889c;
     --accent:#9aa8e8;--accent-hover:#b0bbef;--accent-soft:#232b49;--on-accent:#111628;
     --basic:#9aa8e8;--basic-soft:#232b49;
-    --plus:#e7b35f;--plus-soft:#3a2d17;
+    --plus:#e7b35f;--plus-soft:#3a2d17;--recruit:#4fc7c3;--recruit-soft:#173533;
     --good:#5fc193;--good-soft:#173328;
     --warn:#f39b62;--warn-soft:#3b2518;
     --bad:#f08072;--bad-soft:#3d1e1b;
@@ -43,7 +43,7 @@
   --text:#e6e9f1;--text-2:#b3bacb;--muted:#7f889c;
   --accent:#9aa8e8;--accent-hover:#b0bbef;--accent-soft:#232b49;--on-accent:#111628;
   --basic:#9aa8e8;--basic-soft:#232b49;
-  --plus:#e7b35f;--plus-soft:#3a2d17;
+  --plus:#e7b35f;--plus-soft:#3a2d17;--recruit:#4fc7c3;--recruit-soft:#173533;
   --good:#5fc193;--good-soft:#173328;
   --warn:#f39b62;--warn-soft:#3b2518;
   --bad:#f08072;--bad-soft:#3d1e1b;
@@ -475,7 +475,7 @@ table.mt{width:100%;border-collapse:collapse;font-size:calc(13px * var(--fs))}
   --text:#0f0f0f;--text-2:#3d3d3d;--muted:#8a8a8a;
   --accent:#0f0f0f;--accent-hover:#272727;--accent-soft:#f5f5f5;--on-accent:#ffffff;
   --basic:#4a4a4a;--basic-soft:#ffffff;
-  --plus:#065fd4;--plus-soft:#ffffff;
+  --plus:#065fd4;--plus-soft:#ffffff;--recruit:#00a0c8;--recruit-soft:#ffffff;
   --good:#065fd4;--good-soft:#ffffff;
   --warn:#4a4a4a;--warn-soft:#ffffff;
   --bad:#cc0000;--bad-soft:#ffffff;
@@ -856,3 +856,10 @@ table.mt{width:100%;border-collapse:collapse;font-size:calc(13px * var(--fs))}
 [data-theme="ura"] .tchip.done{background:#e8f0fe;color:#065fd4}
 [data-theme="ura"] .tchip.od{background:#fde8e8;color:#cc0000}
 .rec-due-l{align-self:center;font-size:calc(12px * var(--fs));color:var(--text-2);font-weight:700;margin-left:4px}
+
+/* ===== 採用業務 ===== */
+.k.recruit{background:var(--recruit-soft);color:var(--recruit)}
+.s-recruit{background:var(--recruit)}
+[data-theme="ura"] .k.recruit{color:#00809f}
+[data-theme="ura"] .day11 .s-recruit{background:#00a0c8}
+.adm-cols.three{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}

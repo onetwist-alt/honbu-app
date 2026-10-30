@@ -1,5 +1,5 @@
 /**
- * 本部アプリ（本番）GAS  v1.6.0
+ * 本部アプリ（本番）GAS  v1.7.0
  *
  * スプレッドシート「業務管理データ」に紐づけて使います。
  * はじめて貼り付けたとき・新しい版に貼り替えたときは、setup を1回実行してください。
@@ -8,16 +8,18 @@
  * ・足りない列は右に足すだけで、既存のデータは消しません。
  * ・削除は「削除」の印をつけるだけで、行は消しません（ログインの記録だけは片付けます）。
  */
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.7.0';
 // これより古いアプリの画面からの操作は受け付けない（古い画面のまま使われるのを防ぐ）
-const MIN_APP_VERSION = '1.5.0';
+const MIN_APP_VERSION = '1.6.0';
 const TZ = 'Asia/Tokyo';
 const SESSION_DAYS = 30;     // ログインしたままにする日数
 const HASH_ROUNDS = 300;     // パスワードを変換する回数
 const DAY_START_HOUR = 8;    // 朝8時で日付が切り替わる
 
 /* ===== 表示用の言葉（シートには日本語で書き、アプリの中では短い記号で扱う） ===== */
-const KIND = { basic: '基本', plus: '＋α' };
+const KIND = { basic: '基本', plus: '＋α', recruit: '採用' };
+const KIND_FULL = { basic: '基本業務', plus: '＋α業務', recruit: '採用業務' };
+function normKind_(k) { return k === 'plus' || k === 'recruit' ? k : 'basic'; }
 const REPORT_ST = { draft: '下書き', submitted: '提出' };
 const ATT_ST = { in: '出勤', off: '欠勤' };
 const REC = { daily: '毎日', weekly: '毎週', monthly: '毎月' };
@@ -66,7 +68,7 @@ const SCHEMA = {
 
 const SETTING_DEFAULTS = [
   ['monthlyCost', '月の人件費（円）', '300000', '全員同じ金額です。アプリでは管理者だけが変更できます'],
-  ['dayHours', '1日の勤務時間（時間）', '11', '基本業務時間 ＝ この時間 − ＋α業務時間'],
+  ['dayHours', '1日の勤務時間（時間）', '11', '基本業務時間 ＝ この時間 −（＋α業務時間 ＋ 採用業務時間）'],
   ['dayStart', '日付の切り替え（時）', String(DAY_START_HOUR), 'この時刻で次の日になります（夜勤は始まった日の分）'],
   ['adminReset', 'パスワードのリセット（本部長用）', 'FALSE', '本部長がパスワードを忘れたら、値を TRUE にしてください。下の行に仮パスワードが出ます'],
   ['adminResetResult', 'リセット後の仮パスワード', '', '最初のログインで新しいパスワードに変えてください']
@@ -291,12 +293,12 @@ function hSaveReport_(p, user) {
   if (date > bizToday_()) throw appErr_('bad', 'まだ来ていない日の日報は入力できません');
   const status = p.status === 'submitted' ? 'submitted' : 'draft';
   const list = (Array.isArray(p.items) ? p.items : []).slice(0, 60).map(function (x, i) {
-    const kind = x.kind === 'plus' ? 'plus' : 'basic';
+    const kind = normKind_(x.kind);
     const name = String(x.name || '').trim().slice(0, 60);
     if (!name) throw appErr_('bad', '業務名が空の行があります');
     const min = Math.min(660, Math.max(30, Math.round((Number(x.min) || 0) / 30) * 30));
     return { id: String(x.id || uid_('i')).slice(0, 40), kind: kind, name: name, min: min,
-      memo: String(x.memo || '').slice(0, 200), taskId: kind === 'plus' ? String(x.taskId || '') : '', seq: i };
+      memo: String(x.memo || '').slice(0, 200), taskId: String(x.taskId || ''), seq: i };
   });
   const key = user.id + '|' + date;
   const R = T_('reports'), I = T_('items');
@@ -524,7 +526,7 @@ function hRestoreTasks_(p, user) {
 /* ===== 業務マスター ===== */
 function hSaveWorkType_(p, user) {
   const W = T_('workTypes');
-  const kind = p.kind === 'plus' ? 'plus' : 'basic';
+  const kind = normKind_(p.kind);
   const name = String(p.name || '').trim().slice(0, 60);
   if (!name) throw appErr_('bad', '業務名を入れてください');
   const now = nowStr_();
@@ -623,7 +625,7 @@ function reportData_(x, ym) {
     employees: ag.rows.map(function (rw) {
       const p = empProg_(x, rw.e.id);
       return { id: rw.e.id, name: rw.e.name, days: rw.s.days, rate: Math.round(rw.s.rate), cost: rw.cost,
-        basicMin: Math.round(rw.s.basicMin), plusMin: Math.round(rw.s.plusMin),
+        basicMin: Math.round(rw.s.basicMin), plusMin: Math.round(rw.s.plusMin), recruitMin: Math.round(rw.s.recruitMin),
         progress: Math.round(p.pct), roots: p.roots, doneRoots: p.done,
         doneInMonth: x.tasks.filter(function (t) { return t.owner === rw.e.id && t.doneAt && t.doneAt.slice(0, 7) === ymSlash; }).length };
     }),
@@ -648,7 +650,7 @@ function hMonthReport_(p) {
     const m = shiftYm_(ym, -i), cc = closings[m];
     const d = cc && cc.data ? cc.data : reportData_(x, m);
     const sum = function (k) { return (d.employees || []).reduce(function (s, e) { return s + (e[k] || 0); }, 0); };
-    rep.trend.push({ ym: m, basicMin: sum('basicMin'), plusMin: sum('plusMin'), days: sum('days'), cost: d.total || 0, closed: !!(cc && cc.data) });
+    rep.trend.push({ ym: m, basicMin: sum('basicMin'), plusMin: sum('plusMin'), recruitMin: sum('recruitMin'), days: sum('days'), cost: d.total || 0, closed: !!(cc && cc.data) });
   }
   return rep;
 }
@@ -1181,14 +1183,14 @@ function buildOverview_(ymArg, dayArg) {
   // その日の一人ひとり（数式で人数分の行に広がる）
   const ppTitle = o.row([{ f: '=IFERROR(VLOOKUP($J$2,' + D + '$A:$B,2,FALSE),"")&"　一人ひとり"', b: true, fs: 13, fc: C_.title }], { h: 30 });
   o.section(ppTitle);
-  const ph = o.head(['社員', '出勤', '日報', '基本業務', '＋α業務', '業務内容', '', '']);
-  const p0 = o.row([{ f: '=IFERROR(FILTER(' + D + '$J:$O,' + D + '$I:$I=$J$2),"")' }], { h: 24 });
+  const ph = o.head(['社員', '出勤', '日報', '基本業務', '＋α業務', '採用業務', '業務内容', '']);
+  const p0 = o.row([{ f: '=IFERROR(FILTER(' + D + '$J:$P,' + D + '$I:$I=$J$2),"")' }], { h: 24 });
   for (let i = 1; i < Math.max(N, 1); i++) o.row([], { h: 24 });
   const pRange = 'A' + p0 + ':H' + (p0 + Math.max(N, 1) - 1);
   o.cond('=$C' + p0 + '="未提出"', pRange, { fc: C_.red, b: true });
   o.cond('=ISEVEN(ROW())', pRange, { bg: C_.zebra });
   o.align(p0, 2, Math.max(N, 1), 1, 'center');
-  o.align(p0, 4, Math.max(N, 1), 2, 'right');
+  o.align(p0, 4, Math.max(N, 1), 3, 'right');
   o.border(ph, 1, Math.max(N, 1) + 1, 8, 'table');
   o.row([], { h: 14 });
 
@@ -1235,14 +1237,14 @@ function buildOverview_(ymArg, dayArg) {
   const ag = monthAgg_(x, ym);
   const mt = o.row([{ v: fmtYM_(ym) + 'のまとめ', b: true, fs: 13, fc: C_.title }, '', '', { v: ym === x.today.slice(0, 7) ? '月の途中なので暫定の数字です' : '', fs: 9, fc: C_.sub }], { h: 30 });
   o.section(mt);
-  const mh = o.head(['社員', '出勤日数', '時給', '人件費', '基本業務', '＋α業務', '', '']);
+  const mh = o.head(['社員', '出勤日数', '時給', '人件費', '基本業務', '＋α業務', '採用業務', '']);
   ag.rows.forEach(function (rw, i) {
     const bg = i % 2 ? C_.zebra : C_.white;
     o.row([{ v: rw.e.name, b: true, bg: bg }, { v: rw.s.days + '日', al: 'right', bg: bg }, { v: rw.s.days ? yen_(rw.s.rate) : '—', al: 'right', bg: bg },
-      { v: yen_(rw.cost), al: 'right', bg: bg }, { v: fmtH_(rw.s.basicMin), al: 'right', bg: bg }, { v: fmtH_(rw.s.plusMin), al: 'right', bg: bg }], { h: 26 });
+      { v: yen_(rw.cost), al: 'right', bg: bg }, { v: fmtH_(rw.s.basicMin), al: 'right', bg: bg }, { v: fmtH_(rw.s.plusMin), al: 'right', bg: bg }, { v: fmtH_(rw.s.recruitMin), al: 'right', bg: bg }], { h: 26 });
   });
-  const tot = o.row([{ v: '合計', b: true, bg: '#e9eef5' }, { v: '', bg: '#e9eef5' }, { v: '', bg: '#e9eef5' }, { v: yen_(ag.total), b: true, al: 'right', bg: '#e9eef5' }, { v: '', bg: '#e9eef5' }, { v: '', bg: '#e9eef5' }], { h: 28 });
-  o.border(mh, 1, tot - mh + 1, 6, 'table');
+  const tot = o.row([{ v: '合計', b: true, bg: '#e9eef5' }, { v: '', bg: '#e9eef5' }, { v: '', bg: '#e9eef5' }, { v: yen_(ag.total), b: true, al: 'right', bg: '#e9eef5' }, { v: '', bg: '#e9eef5' }, { v: '', bg: '#e9eef5' }, { v: '', bg: '#e9eef5' }], { h: 28 });
+  o.border(mh, 1, tot - mh + 1, 7, 'table');
   o.row([], { h: 14 });
 
   const wt = o.row([{ v: '業務別の人件費', b: true, fs: 13, fc: C_.title }], { h: 30 });
@@ -1251,7 +1253,7 @@ function buildOverview_(ymArg, dayArg) {
   if (!ag.work.length) o.row([{ v: 'この月のデータはありません', fc: C_.sub }], { h: 26 });
   ag.work.forEach(function (w, i) {
     const k = w[0].indexOf('|'), bg = i % 2 ? C_.zebra : C_.white;
-    o.row([{ v: w[0].slice(k + 1), bg: bg }, { v: '', bg: bg }, { v: w[0].slice(0, k) === 'plus' ? '＋α業務' : '基本業務', bg: bg }, { v: fmtH_(w[1].min), al: 'right', bg: bg }, { v: yen_(w[1].cost), al: 'right', bg: bg }], { h: 26 });
+    o.row([{ v: w[0].slice(k + 1), bg: bg }, { v: '', bg: bg }, { v: KIND_FULL[w[0].slice(0, k)] || '基本業務', bg: bg }, { v: fmtH_(w[1].min), al: 'right', bg: bg }, { v: yen_(w[1].cost), al: 'right', bg: bg }], { h: 26 });
   });
   o.border(wh, 1, o.rows.length - wh + 1, 5, 'table');
   o.row([], { h: 14 });
@@ -1259,7 +1261,7 @@ function buildOverview_(ymArg, dayArg) {
   const kt = o.row([{ v: 'タスク別の累計人件費', b: true, fs: 13, fc: C_.title }], { h: 30 });
   o.section(kt);
   const kh = o.head(['タスク', '', '', '時間', '人件費', '', '', '']);
-  if (!ag.task.length) o.row([{ v: 'タスクに紐づいた＋α業務はまだありません', fc: C_.sub }], { h: 26 });
+  if (!ag.task.length) o.row([{ v: 'タスクに紐づいた業務はまだありません', fc: C_.sub }], { h: 26 });
   ag.task.forEach(function (w, i) {
     const t = x.byId[w[0]], bg = i % 2 ? C_.zebra : C_.white;
     o.row([{ v: t ? t.title : w[0], bg: bg }, { v: '', bg: bg }, { v: '', bg: bg }, { v: fmtH_(w[1].min), al: 'right', bg: bg }, { v: yen_(w[1].cost), al: 'right', bg: bg }], { h: 26 });
@@ -1295,16 +1297,16 @@ function writeViewData_(ss, x, ym) {
       }
       people.push([d, e.name, a === 'in' ? '〇' : a === 'off' ? '×' : '',
         sub ? '提出済み' : (r && r.status === 'draft' ? '下書き' : (a === 'in' && d <= x.today ? '未提出' : '')),
-        a === 'in' ? fmtH_(sub ? x.DAYMIN - c.plus * f : x.DAYMIN) : '', a === 'in' && sub ? fmtH_(c.plus * f) : '', work]);
+        a === 'in' ? fmtH_(sub ? x.DAYMIN - c.extra * f : x.DAYMIN) : '', a === 'in' && sub ? fmtH_(c.plus * f) : '', a === 'in' && sub ? fmtH_(c.recruit * f) : '', work]);
     });
   }
   sh.clearContents();
   const txt = function (rows) { return rows.map(function (r) { return r.map(function (v) { return v === '' ? '' : "'" + v; }); }); };
-  if (sh.getMaxColumns() < 15) sh.insertColumnsAfter(sh.getMaxColumns(), 15 - sh.getMaxColumns());
+  if (sh.getMaxColumns() < 16) sh.insertColumnsAfter(sh.getMaxColumns(), 16 - sh.getMaxColumns());
   const need = Math.max(days.length, people.length) + 2;
   if (sh.getMaxRows() < need) sh.insertRowsAfter(sh.getMaxRows(), need - sh.getMaxRows());
   if (days.length) sh.getRange(1, 1, days.length, 7).setValues(txt(days));
-  if (people.length) sh.getRange(1, 9, people.length, 7).setValues(txt(people));
+  if (people.length) sh.getRange(1, 9, people.length, 8).setValues(txt(people));
 }
 
 /* ---------- 社員ごとのタブ（非表示） ---------- */
@@ -1344,7 +1346,7 @@ function buildEmpTabs_() {
       const blank3 = [{ v: '', bg: bg }, { v: '', bg: bg }, { v: '', bg: bg }];
       if (!items.length) { o.row(base.concat([{ v: '', bg: bg }, { v: '', bg: bg }, { v: '', bg: bg }, { v: '', bg: bg }]), { h: 24 }); continue; }
       items.forEach(function (it, j) {
-        o.row((j ? blank3 : base).concat([{ v: it.kind === 'plus' ? '＋α' : '基本', bg: bg, fc: it.kind === 'plus' ? C_.blue : C_.text }, { v: it.name, bg: bg },
+        o.row((j ? blank3 : base).concat([{ v: KIND[it.kind] || '基本', bg: bg, fc: it.kind === 'plus' ? C_.blue : it.kind === 'recruit' ? '#0f7f80' : C_.text }, { v: it.name, bg: bg },
           { v: fmtH_(it.min), al: 'right', bg: bg }, { v: it.memo, bg: bg }]), { h: 24 });
       });
     }
@@ -1534,10 +1536,10 @@ function viewCtx_() {
     tasks: tasks, kids: kids, byId: byId, prog: prog, reports: reports, items: items, att: att, today: bizToday_() };
 }
 function calc_(x, items) {
-  let plus = 0, basicIn = 0;
-  items.forEach(function (i) { if (i.kind === 'plus') plus += i.min; else basicIn += i.min; });
-  const total = plus + basicIn;
-  return { plus: plus, basicIn: basicIn, total: total, other: Math.max(0, x.DAYMIN - total), over: total > x.DAYMIN };
+  let plus = 0, recruit = 0, basicIn = 0;
+  items.forEach(function (i) { if (i.kind === 'plus') plus += i.min; else if (i.kind === 'recruit') recruit += i.min; else basicIn += i.min; });
+  const extra = plus + recruit, total = extra + basicIn;
+  return { plus: plus, recruit: recruit, extra: extra, basicIn: basicIn, total: total, other: Math.max(0, x.DAYMIN - total), over: total > x.DAYMIN };
 }
 function dayStats_(x, d) {
   let nIn = 0, nOff = 0, nSub = 0;
@@ -1576,7 +1578,7 @@ function cmpTask_(x, a, b) {
   return u < v ? -1 : u > v ? 1 : 0;
 }
 function monthStats_(x, eid, ym) {
-  let days = 0, basicMin = 0, plusMin = 0;
+  let days = 0, basicMin = 0, plusMin = 0, recruitMin = 0;
   const byWork = {}, byTask = {};
   for (let i = 1; i <= daysIn_(ym); i++) {
     const d = ym + '-' + pad2_(i);
@@ -1594,9 +1596,10 @@ function monthStats_(x, eid, ym) {
     });
     if (c.other > 0) { const k = 'basic|その他の基本業務'; byWork[k] = (byWork[k] || 0) + c.other; }
     plusMin += c.plus * f;
-    basicMin += x.DAYMIN - c.plus * f;
+    recruitMin += c.recruit * f;
+    basicMin += x.DAYMIN - c.extra * f;
   }
-  return { days: days, rate: days ? x.COST / (days * x.DAYMIN / 60) : 0, basicMin: basicMin, plusMin: plusMin, byWork: byWork, byTask: byTask };
+  return { days: days, rate: days ? x.COST / (days * x.DAYMIN / 60) : 0, basicMin: basicMin, plusMin: plusMin, recruitMin: recruitMin, byWork: byWork, byTask: byTask };
 }
 function monthAgg_(x, ym) {
   const work = {}, task = {};

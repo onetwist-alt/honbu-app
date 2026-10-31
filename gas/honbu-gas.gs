@@ -1,5 +1,5 @@
 /**
- * 本部アプリ（本番）GAS  v1.7.1
+ * 本部アプリ（本番）GAS  v1.7.2
  *
  * スプレッドシート「業務管理データ」に紐づけて使います。
  * はじめて貼り付けたとき・新しい版に貼り替えたときは、setup を1回実行してください。
@@ -8,7 +8,7 @@
  * ・足りない列は右に足すだけで、既存のデータは消しません。
  * ・削除は「削除」の印をつけるだけで、行は消しません（ログインの記録だけは片付けます）。
  */
-const APP_VERSION = '1.7.1';
+const APP_VERSION = '1.7.2';
 // これより古いアプリの画面からの操作は受け付けない（古い画面のまま使われるのを防ぐ）
 const MIN_APP_VERSION = '1.6.0';
 const TZ = 'Asia/Tokyo';
@@ -289,7 +289,11 @@ function rangeData_(from, to) {
 function hSaveReport_(p, user) {
   const date = String(p.date || '');
   if (!isDate_(date)) throw appErr_('bad', '日付が正しくありません');
-  if (p.empId && p.empId !== user.id) throw appErr_('forbidden', '日報は本人だけが入力できます');
+  // 日報を直せるのは本人と管理者（管理者は全員分を直せる）
+  const empId = String(p.empId || user.id);
+  if (empId !== user.id && !user.admin) throw appErr_('forbidden', '日報は本人と管理者だけが入力できます');
+  const target = T_('employees').find(empId);
+  if (!target) throw appErr_('bad', '社員が見つかりません');
   if (date > bizToday_()) throw appErr_('bad', 'まだ来ていない日の日報は入力できません');
   const status = p.status === 'submitted' ? 'submitted' : 'draft';
   const list = (Array.isArray(p.items) ? p.items : []).slice(0, 60).map(function (x, i) {
@@ -302,7 +306,7 @@ function hSaveReport_(p, user) {
   });
   // 業務が1件もない日報は提出できない（下書きは空でも保存できる）
   if (status === 'submitted' && !list.length) throw appErr_('bad', '業務を1件以上入れてから提出してください');
-  const key = user.id + '|' + date;
+  const key = empId + '|' + date;
   const R = T_('reports'), I = T_('items');
   let rep = R.find(key);
   const itemsOf = function () { return I.rows.filter(function (i) { return i.reportId === key && !i.deleted; }); };
@@ -316,7 +320,7 @@ function hSaveReport_(p, user) {
     rep = R.update(rep, { status: status, submittedAt: status === 'submitted' ? now : rep.submittedAt,
       changedAfterClose: rep.changedAfterClose || closed, updatedAt: now, version: rep.version + 1 });
   } else {
-    rep = R.insert({ id: key, empId: user.id, date: date, status: status, submittedAt: status === 'submitted' ? now : '',
+    rep = R.insert({ id: key, empId: empId, date: date, status: status, submittedAt: status === 'submitted' ? now : '',
       changedAfterClose: closed, updatedAt: now, version: 1 });
   }
   const existing = itemsOf();
@@ -326,7 +330,7 @@ function hSaveReport_(p, user) {
   const adds = [];
   list.forEach(function (x) {
     const e = existing.filter(function (y) { return y.id === x.id; })[0];
-    const row = { id: x.id, reportId: key, empId: user.id, date: date, kind: x.kind, name: x.name, min: x.min,
+    const row = { id: x.id, reportId: key, empId: empId, date: date, kind: x.kind, name: x.name, min: x.min,
       memo: x.memo, taskId: x.taskId, seq: x.seq, deleted: false, updatedAt: now };
     if (!e) adds.push(row);
     else if (e.kind !== row.kind || e.name !== row.name || e.min !== row.min || e.memo !== row.memo || e.taskId !== row.taskId || e.seq !== row.seq) I.update(e, row);
@@ -337,7 +341,7 @@ function hSaveReport_(p, user) {
     // 日報を出した日は自動で出勤にする
     const A = T_('attendance');
     const a = A.find(key);
-    if (!a) { A.insert({ id: key, empId: user.id, date: date, status: 'in', updatedAt: now, version: 1 }); autoAttend = true; }
+    if (!a) { A.insert({ id: key, empId: empId, date: date, status: 'in', updatedAt: now, version: 1 }); autoAttend = true; }
     else if (a.status !== 'in') { A.update(a, { status: 'in', updatedAt: now, version: a.version + 1 }); autoAttend = true; }
     // よく使う業務ほど候補の上に出すための回数
     const W = T_('workTypes');
@@ -347,7 +351,7 @@ function hSaveReport_(p, user) {
     });
   }
   const fresh = itemsOf();
-  audit_(user, status === 'submitted' ? '日報を提出' : '日報を下書き保存', user.name + ' ' + date, before, reportSummary_(rep, fresh), 'アプリ');
+  audit_(user, (status === 'submitted' ? '日報を提出' : '日報を下書き保存') + (empId !== user.id ? '（管理者が修正）' : ''), target.name + ' ' + date, before, reportSummary_(rep, fresh), 'アプリ');
   return { report: reportPub_(rep, fresh), autoAttend: autoAttend };
 }
 

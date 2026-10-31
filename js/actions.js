@@ -21,7 +21,7 @@ async function saveReport(status){
   if (status === 'submitted' && !wc.items.length) { toast('業務を1件以上入れてから提出してください'); return; }
   ui.saving = true;
   try {
-    const r = await api('saveReport', { date: key.split('|')[1], status, items: wc.items, version: prev ? prev.version : null });
+    const r = await api('saveReport', { empId: key.split('|')[0], date: key.split('|')[1], status, items: wc.items, version: prev ? prev.version : null });
     data.reports[key] = r.report;
     let msg = status === 'submitted' ? (prev && prev.status === 'submitted' ? '変更を提出しました' : '日報を提出しました') : '下書きを保存しました';
     if (status === 'submitted') {

@@ -62,7 +62,8 @@ function suggList(k, name, act, verb){
   return list.map(w=>`<button class="sg ${w.name===q?'on':''}" data-act="${act}" data-n="${esc(w.name)}">${esc(w.name)}</button>`).join('');
 }
 function reportCard(eid,d){
-  const today=bizToday(), own=eid===ui.user, future=d>today, editable=own&&!future;
+  // 日報を直せるのは本人と管理者（管理者は全員分を直せる）
+  const today=bizToday(), own=eid===ui.user, byAdmin=!own&&!!(me()&&me().admin), future=d>today, editable=(own||byAdmin)&&!future;
   const r=rep(eid,d);
   const items = editable ? wcFor(eid,d).items : (r?r.items:[]);
   const dirty = editable && wcDirty();
@@ -70,8 +71,9 @@ function reportCard(eid,d){
   const stChip = r&&r.status==='submitted'?'<span class="chip good">提出済み</span>':(r&&r.status==='draft'?'<span class="chip warn">下書き</span>':'<span class="chip">未提出</span>');
   let form='';
   if(editable){
+    const adminNote = byAdmin ? `<div class="banner warn" style="margin:12px 16px 0">${ICON.info}<div>管理者として、${esc(empName(eid))}さんの日報を直しています。保存・提出すると操作履歴に残ります。</div></div>` : '';
     const k=ui.entry.kind, myTasks=visibleTasks(eid).filter(t=>!done(t)).sort(cmpTask);
-    form=`<div class="rep-form">
+    form=adminNote+`<div class="rep-form">
       <div class="seg" style="align-self:flex-start" role="group" aria-label="業務の区分"><button class="${k==='basic'?'on':''}" data-act="entry-kind" data-k="basic">基本業務</button><button class="${k==='plus'?'on':''}" data-act="entry-kind" data-k="plus">＋α業務</button><button class="${k==='recruit'?'on':''}" data-act="entry-kind" data-k="recruit">採用業務</button></div>
       <label class="fl">業務名<input class="inp" id="en-name" data-field="entry-name" value="${esc(ui.entry.name)}" placeholder="候補から選ぶか、入力する" autocomplete="off"></label>
       <div class="sugg" id="sugg">${suggHtml()}</div>
@@ -81,7 +83,7 @@ function reportCard(eid,d){
         ${[60,120,180,240].map(m=>`<button class="qt ${ui.entry.min===m?'on':''}" data-act="min-set" data-m="${m}">${fmtH(m)}</button>`).join('')}</div>
       <button class="btn btn-primary btn-block" data-act="entry-add">${ICON.plus}業務を追加</button></div>`;
   } else if(!own){
-    form=`<div class="banner info" style="margin:12px 16px 4px">${ICON.info}<div>日報は本人だけが入力できます。ここでは見るだけです。</div></div>`;
+    form=`<div class="banner info" style="margin:12px 16px 4px">${ICON.info}<div>日報は本人と管理者だけが入力できます。ここでは見るだけです。</div></div>`;
   } else {
     form=`<div class="banner info" style="margin:12px 16px 4px">${ICON.info}<div>まだ来ていない日なので、日報は入力できません。</div></div>`;
   }

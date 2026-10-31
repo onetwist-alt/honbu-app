@@ -18,7 +18,7 @@ function addEntry(){
 async function saveReport(status){
   if (ui.saving) return;
   const wc = wcFor(ui.empId, ui.selDate), key = wc.key, prev = data.reports[key];
-  if (status === 'submitted' && !wc.items.length && !confirm('業務が1件もありません。11時間すべてを「その他の基本業務」として提出しますか？')) return;
+  if (status === 'submitted' && !wc.items.length) { toast('業務を1件以上入れてから提出してください'); return; }
   ui.saving = true;
   try {
     const r = await api('saveReport', { date: key.split('|')[1], status, items: wc.items, version: prev ? prev.version : null });

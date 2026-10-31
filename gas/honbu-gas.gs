@@ -1,5 +1,5 @@
 /**
- * 本部アプリ（本番）GAS  v1.7.0
+ * 本部アプリ（本番）GAS  v1.7.1
  *
  * スプレッドシート「業務管理データ」に紐づけて使います。
  * はじめて貼り付けたとき・新しい版に貼り替えたときは、setup を1回実行してください。
@@ -8,7 +8,7 @@
  * ・足りない列は右に足すだけで、既存のデータは消しません。
  * ・削除は「削除」の印をつけるだけで、行は消しません（ログインの記録だけは片付けます）。
  */
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.7.1';
 // これより古いアプリの画面からの操作は受け付けない（古い画面のまま使われるのを防ぐ）
 const MIN_APP_VERSION = '1.6.0';
 const TZ = 'Asia/Tokyo';
@@ -300,6 +300,8 @@ function hSaveReport_(p, user) {
     return { id: String(x.id || uid_('i')).slice(0, 40), kind: kind, name: name, min: min,
       memo: String(x.memo || '').slice(0, 200), taskId: String(x.taskId || ''), seq: i };
   });
+  // 業務が1件もない日報は提出できない（下書きは空でも保存できる）
+  if (status === 'submitted' && !list.length) throw appErr_('bad', '業務を1件以上入れてから提出してください');
   const key = user.id + '|' + date;
   const R = T_('reports'), I = T_('items');
   let rep = R.find(key);

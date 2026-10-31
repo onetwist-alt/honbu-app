@@ -863,3 +863,4 @@ table.mt{width:100%;border-collapse:collapse;font-size:calc(13px * var(--fs))}
 [data-theme="ura"] .k.recruit{color:#00809f}
 [data-theme="ura"] .day11 .s-recruit{background:#00a0c8}
 .adm-cols.three{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.rep-foot .rep-need{margin-right:auto}

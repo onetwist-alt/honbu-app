@@ -1,5 +1,5 @@
 'use strict';
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.6.1';
 /* ===== 定数 ===== */
 let DAY_MIN = 660;              // 1日の勤務時間（分）。設定タブの値で上書きする
 let MONTHLY_COST = 300000;      // 月の人件費。設定タブの値で上書きする

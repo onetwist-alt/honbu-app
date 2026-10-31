@@ -93,10 +93,10 @@ function reportCard(eid,d){
   if(editable){
     if(r && r.status==='submitted'){
       foot = dirty
-        ? `<div class="rep-foot"><button class="btn" data-act="rep-revert">変更を取り消す</button><button class="btn btn-primary" data-act="rep-submit" ${ui.saving?'disabled':''}>${ui.saving?'送信中…':'変更を提出'}</button></div>`
+        ? `<div class="rep-foot"><button class="btn" data-act="rep-revert">変更を取り消す</button>${items.length?'':'<span class="muted small">業務を1件以上入れてください</span>'}<button class="btn btn-primary" data-act="rep-submit" ${ui.saving||!items.length?'disabled':''}>${ui.saving?'送信中…':'変更を提出'}</button></div>`
         : `<div class="rep-foot"><span class="muted small">提出済みです。同じ日なら何度でも直して再提出できます。</span></div>`;
     } else {
-      foot = `<div class="rep-foot"><button class="btn" data-act="rep-draft" ${dirty&&!ui.saving?'':'disabled'}>下書き保存</button><button class="btn btn-primary" data-act="rep-submit" ${ui.saving?'disabled':''}>${ui.saving?'送信中…':'日報を提出'}</button></div>`;
+      foot = `<div class="rep-foot"><button class="btn" data-act="rep-draft" ${dirty&&!ui.saving?'':'disabled'}>下書き保存</button>${items.length?'':'<span class="muted small rep-need">業務を1件以上入れると提出できます</span>'}<button class="btn btn-primary" data-act="rep-submit" ${ui.saving||!items.length?'disabled':''}>${ui.saving?'送信中…':'日報を提出'}</button></div>`;
     }
   }
   return `<div class="card"><div class="card-h"><h3>${fmtMD(d)} の日報</h3>${stChip}${dirty?'<span class="chip warn">保存していない変更</span>':''}<span style="margin-left:auto">${attChip(a)}</span></div>${form}${list}${sum}${foot}</div>`;
